@@ -560,15 +560,15 @@ function extractResult(responseData) {
 async function sendResultToBotBusiness(resultData) {
   try {
     const payload = {
-  command: "/api_result_receiver",
-  options: {
-    token: SECRET_TOKEN,
-    period: resultData.period,
-    number: resultData.number,
-    result: resultData.result,
-    platform: "DMFIRST GAME"  // Exact match with /wingo_channel_loop
-  }
-};
+      command: "/api_result_receiver",
+      options: {
+        token: SECRET_TOKEN,
+        period: String(resultData.period).trim(),
+        number: resultData.number,
+        result: String(resultData.result).trim(),
+        platform: "DMFIRST GAME"  // Exact match with /wingo_channel_loop storage key
+      }
+    };
 
     console.log(
       "[API] Sending period:",
@@ -640,7 +640,6 @@ function setupResponseMonitor() {
         return;
       }
 
-      // Console mein log karke dekhte hain ki kya API hitting ho rahi hai
       console.log("[API DETECTED] URL:", url);
 
       const extracted = extractResult(responseData);
@@ -666,7 +665,6 @@ function setupResponseMonitor() {
 
   console.log("[MONITOR] Listener active.");
 }
-
 
 // =======================================================
 // SCRIPT 14 — KEEPALIVE
