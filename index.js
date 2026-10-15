@@ -1,7 +1,7 @@
 /*
 =========================================================
  PROJECT : DmFirst WinGo 1M Worker
- PURPOSE : Working Direct Browser Fetch & WebSocket Bridge
+ PURPOSE : Final Production Code with CDP WebSocket & DOM Fallback
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
@@ -20,11 +20,12 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 10000;
-const BOTBUSINESS_API = "https://api.botbusiness.net/v1/bots/3001907/runs";
 
-const SECRET_TOKEN = "wingo_secret_2026";
-const DEMO_USER = "922878117";
-const DEMO_PASS = "Demo1432";
+// Yahan aap apna BotBusiness API URL aur Secret Token direct daal sakte hain ya Render Environment Variables use kar sakte hain
+const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.botbusiness.net/v1/bots/3001907/runs";
+const SECRET_TOKEN = process.env.SECRET_TOKEN || "wingo_secret_2026";
+const DEMO_USER = process.env.DEMO_USER || "922878117";
+const DEMO_PASS = process.env.DEMO_PASS || "Demo1432";
 const LOGIN_URL = "https://www.dmfirst0.com/#/login";
 
 let browser = null;
@@ -203,25 +204,21 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// Working Browser-Side WebSocket / Event Listener & DOM Fallback Bridge
+// Live WebSocket & DOM Table Scraper Bridge
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Browser-Side Live Bridge...");
+  console.log("[MONITOR] Starting Live WebSocket & DOM Bridge...");
 
-  // CDP (Chrome DevTools Protocol) session enable karke incoming websocket messages sunenge
+  // CDP WebSocket Stream Interceptor
   page.target().createCDPSession().then(async (client) => {
     await client.send('Network.enable');
     client.on('Network.webSocketFrameReceived', async ({ response }) => {
       try {
         const payloadData = response.payloadData;
         if (payloadData && (payloadData.includes("issue") || payloadData.includes("period") || payloadData.includes("number"))) {
-          console.log("[WEBSOCKET RAW DATA]:", payloadData.substring(0, 200));
-          
-          // JSON parse karne ki koshish
           let parsed;
           try { parsed = JSON.parse(payloadData); } catch (e) {}
 
           if (parsed) {
-            // Data se period aur number nikalna
             let period = parsed.issueNumber || parsed.issue || parsed.period || parsed.periodNumber;
             let num = parsed.number ?? parsed.result ?? parsed.openNumber;
 
@@ -239,9 +236,9 @@ function setupResponseMonitor() {
         }
       } catch (err) {}
     });
-  }).catch(e => console.log("[CDP ERROR]:", e.message));
+  }).catch(e => {});
 
-  // Fallback: Direct DOM Table Row Inspector
+  // Reliable DOM Table Fallback Scanner (Checks every 3 seconds)
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
@@ -275,7 +272,7 @@ function setupResponseMonitor() {
         }
       }
     } catch (err) {}
-  }, 4000);
+  }, 3000);
 }
 
 function startKeepAlive() {
