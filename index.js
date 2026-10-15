@@ -1,7 +1,7 @@
 /*
 =========================================================
- PROJECT : DmFirst WinGo 1M Worker (Raw Result Forwarder)
- PLATFORM: Render + Node.js + Puppeteer
+ PROJECT : DmFirst WinGo 1M Worker (Full Working Scraper)
+ PLATFORM: Render + Node.js + Puppeteer + Bots.business
 =========================================================
 */
 
@@ -20,8 +20,8 @@ app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 10000;
 
-// BotBusiness API Endpoint & Token Configuration
-const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.bots.business/v1/bots/3001907/commands/run";
+// Official Bots.business Public Webhook URL
+const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.bots.business/v1/bots/3001907/webhooks?command=/api_result_receiver&public=true";
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "wingo_secret_2026";
 const DEMO_USER = process.env.DEMO_USER || "922878117";
 const DEMO_PASS = process.env.DEMO_PASS || "Demo1432";
@@ -173,29 +173,26 @@ async function navigateToWinGo1M() {
   console.log("[NAVIGATION] Navigation complete! Active on WinGo Game Page.");
 }
 
-// Raw Data Forwarder to BotBusiness Receiver Command
+// Result Sender to BotBusiness Receiver Command
 async function forwardRawResultToBot(resultData) {
   try {
     const payload = {
-      command: "/api_result_receiver",
-      options: {
-        token: SECRET_TOKEN,
-        period: String(resultData.period).trim(),
-        number: resultData.number,
-        result: String(resultData.result).trim(),
-        platform: "DMFIRST GAME"
-      }
+      token: SECRET_TOKEN,
+      period: String(resultData.period).trim(),
+      number: resultData.number,
+      result: String(resultData.result).trim(),
+      platform: "DMFIRST GAME"
     };
 
     console.log("==================================================");
-    console.log("[RAW FORWARD] Period:", resultData.period, "| Number:", resultData.number, "| Result:", resultData.result);
+    console.log("[SENDING RESULT] Period:", resultData.period, "| Number:", resultData.number, "| Result:", resultData.result);
     
     const response = await axios.post(BOTBUSINESS_API, payload, {
       timeout: 15000,
       headers: { "Content-Type": "application/json" }
     });
 
-    console.log("[BOTBUSINESS RESPONSE]: Status", response.status, JSON.stringify(response.data));
+    console.log("[BOTBUSINESS SUCCESS]: Status", response.status, JSON.stringify(response.data));
     console.log("==================================================");
     return true;
   } catch (error) {
@@ -208,6 +205,7 @@ async function forwardRawResultToBot(resultData) {
 function setupResponseMonitor() {
   console.log("[MONITOR] Starting Live WebSocket & DOM Bridge...");
 
+  // WebSocket Listener
   page.target().createCDPSession().then(async (client) => {
     await client.send('Network.enable');
     client.on('Network.webSocketFrameReceived', async ({ response }) => {
@@ -237,18 +235,20 @@ function setupResponseMonitor() {
     });
   }).catch(e => {});
 
+  // DOM History Table Polling Scraper (Every 3 seconds)
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
 
       const rowData = await page.evaluate(() => {
-        const rows = Array.from(document.querySelectorAll('tr, .van-row, div'));
+        const rows = Array.from(document.querySelectorAll('tr, .van-table__row, .game-record-item, [class*="history"] tr, [class*="record"] div'));
+        
         for (let r of rows) {
           const txt = (r.innerText || "").trim();
           const match = txt.match(/202[5-9]\d{12,16}/);
           if (match) {
             const period = match[0];
-            const digits = txt.match(/\b[0-9]\b/g);
+            const digits = txt.match(/\b([0-9])\b/g);
             if (digits && digits.length > 0) {
               const number = parseInt(digits[0]);
               if (!isNaN(number) && number >= 0 && number <= 9) {
