@@ -1,362 +1,802 @@
+/*
+=========================================================
+ PROJECT : DmFirst WinGo 1M Worker
+ PURPOSE : Login, monitor WinGo results and forward them
+ PLATFORM: Render + Node.js + Puppeteer
+=========================================================
+*/
+
+// =======================================================
+// SCRIPT 01 — ENVIRONMENT & MODULES
+// =======================================================
+
 const fs = require("fs");
 const path = require("path");
+
+// Keep Chrome cache inside the project directory.
+// Render build must install Chrome in this same directory.
+const CACHE_DIR = path.join(
+  __dirname,
+  ".cache",
+  "puppeteer"
+);
+
+process.env.PUPPETEER_CACHE_DIR = CACHE_DIR;
+
 const puppeteer = require("puppeteer");
-
-const cacheDir =
-    process.env.PUPPETEER_CACHE_DIR ||
-    path.join(require("os").homedir(), ".cache", "puppeteer");
-
-console.log("[DEBUG] Cache directory:", cacheDir);
-
-function inspectDirectory(dir, depth = 0) {
-    if (depth > 5) return;
-
-    try {
-        if (!fs.existsSync(dir)) {
-            console.log("[MISSING]", dir);
-            return;
-        }
-
-        const entries = fs.readdirSync(dir, {
-            withFileTypes: true
-        });
-
-        for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-
-            if (entry.isDirectory()) {
-                console.log("[DIR]", fullPath);
-                inspectDirectory(fullPath, depth + 1);
-            } else if (
-                entry.name === "chrome" ||
-                entry.name.startsWith("chrome")
-            ) {
-                console.log("[FILE]", fullPath);
-            }
-        }
-    } catch (error) {
-        console.log("[INSPECT ERROR]", error.message);
-    }
-}
-
-console.log("[DEBUG] Expected executable:", puppeteer.executablePath());
-
-inspectDirectory(cacheDir);
+const express = require("express");
+const axios = require("axios");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+
+app.use(express.json({ limit: "1mb" }));
+
+// =======================================================
+// SCRIPT 02 — CONFIGURATION
+// =======================================================
+
+const PORT = process.env.PORT || 10000;
+
+// API endpoint supplied by the user.
+const BOTBUSINESS_API =
+  "https://api.botbusiness.net/v1/bots/3001907/runs";
+
+// Replace these placeholders with your actual credentials.
+const SECRET_TOKEN = "PASTE_YOUR_SECRET_TOKEN_HERE";
+const DEMO_USER = "PASTE_YOUR_DEMO_USERNAME_HERE";
+const DEMO_PASS = "PASTE_YOUR_DEMO_PASSWORD_HERE";
+
+const LOGIN_URL = "https://www.dmfirst0.com/#/login";
+
+let browser = null;
+let page = null;
+
+let workerStarting = false;
+let workerStarted = false;
+let lastResultKey = "";
+
+let keepAliveTimer = null;
+
+const sleep = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+// =======================================================
+// SCRIPT 03 — HEALTH CHECK
+// =======================================================
 
 app.get("/", (req, res) => {
-    res.status(200).send("DmFirst WinGo 1M Worker Active 24/7!");
+  res.status(200).send(
+    "DmFirst WinGo 1M Worker Active 24/7!"
+  );
 });
 
-app.listen(PORT, () => {
-    console.log(`[SERVER] Running on port ${PORT}`);
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    worker: "DmFirst WinGo 1M",
+    browserConnected: Boolean(
+      browser && browser.isConnected()
+    ),
+    pageAvailable: Boolean(
+      page && !page.isClosed()
+    ),
+    workerStarted,
+    time: new Date().toISOString()
+  });
 });
 
-const BOTBUSINESS_API = process.env.BOTBUSINESS_API;
-const SECRET_TOKEN = process.env.SECRET_TOKEN;
-const DEMO_USER = process.env.DEMO_USER;
-const DEMO_PASS = process.env.DEMO_PASS;
+// =======================================================
+// SCRIPT 04 — CONFIGURATION VALIDATION
+// =======================================================
 
-let lastPeriod = "";
-let browserInstance = null;
+function validateConfiguration() {
+  const missing = [];
 
-function getChromePath() {
-    // First check Puppeteer's expected bundled Chrome path.
-    try {
-        const bundledPath = puppeteer.executablePath();
+  if (
+    !SECRET_TOKEN ||
+    SECRET_TOKEN === "PASTE_YOUR_SECRET_TOKEN_HERE"
+  ) {
+    missing.push("SECRET_TOKEN");
+  }
 
-        console.log("[DEBUG] Expected Chrome path:", bundledPath);
-        console.log(
-            "[DEBUG] Bundled Chrome exists:",
-            fs.existsSync(bundledPath)
-        );
+  if (
+    !DEMO_USER ||
+    DEMO_USER === "PASTE_YOUR_DEMO_USERNAME_HERE"
+  ) {
+    missing.push("DEMO_USER");
+  }
 
-        if (fs.existsSync(bundledPath)) {
-            return bundledPath;
-        }
-    } catch (error) {
-        console.log("[DEBUG] Bundled Chrome lookup failed:", error.message);
-    }
+  if (
+    !DEMO_PASS ||
+    DEMO_PASS === "PASTE_YOUR_DEMO_PASSWORD_HERE"
+  ) {
+    missing.push("DEMO_PASS");
+  }
 
-    // Optional explicit path for a Chrome installation on the host.
-    const configuredPath = process.env.PUPPETEER_EXECUTABLE_PATH;
-
-    if (configuredPath && fs.existsSync(configuredPath)) {
-        console.log("[DEBUG] Using configured Chrome:", configuredPath);
-        return configuredPath;
-    }
-
-    // Search common Linux executable locations.
-    const candidates = [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser"
-    ];
-
-    for (const candidate of candidates) {
-        if (fs.existsSync(candidate)) {
-            console.log("[DEBUG] Using system Chrome:", candidate);
-            return candidate;
-        }
-    }
-
+  if (missing.length > 0) {
     throw new Error(
-        "Chrome executable not found. Ensure Puppeteer's Chrome is installed " +
-        "during the Render build, or set PUPPETEER_EXECUTABLE_PATH."
+      "Please configure these values inside index.js: " +
+      missing.join(", ")
     );
+  }
 }
 
-async function startBot() {
-    console.log("[STATUS] Starting WinGo worker...");
+// =======================================================
+// SCRIPT 05 — CHROME DIAGNOSTICS
+// =======================================================
 
-    if (!DEMO_USER || !DEMO_PASS) {
-        console.warn(
-            "[CONFIG WARNING] DEMO_USER or DEMO_PASS is missing."
-        );
+function checkChrome() {
+  const executablePath = puppeteer.executablePath();
+
+  console.log("======================================");
+  console.log("[DEBUG] Node version:", process.version);
+  console.log("[DEBUG] Cache directory:", CACHE_DIR);
+  console.log("[DEBUG] Chrome executable:", executablePath);
+
+  console.log(
+    "[DEBUG] Cache directory exists:",
+    fs.existsSync(CACHE_DIR)
+  );
+
+  console.log(
+    "[DEBUG] Chrome executable exists:",
+    fs.existsSync(executablePath)
+  );
+
+  console.log("======================================");
+
+  if (!fs.existsSync(executablePath)) {
+    throw new Error(
+      "Chrome executable missing. Ensure Render installs " +
+      "Puppeteer Chrome into the project-local cache."
+    );
+  }
+
+  return executablePath;
+}
+
+// =======================================================
+// SCRIPT 06 — BROWSER LAUNCH
+// =======================================================
+
+async function launchBrowser() {
+  const executablePath = checkChrome();
+
+  console.log("[BROWSER] Launching Chrome...");
+
+  browser = await puppeteer.launch({
+    headless: true,
+    executablePath,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--no-zygote",
+      "--disable-background-networking",
+      "--disable-background-timer-throttling",
+      "--disable-renderer-backgrounding",
+      "--disable-features=Translate,BackForwardCache"
+    ],
+    timeout: 60000
+  });
+
+  browser.on("disconnected", () => {
+    console.error("[BROWSER] Browser disconnected.");
+
+    workerStarted = false;
+    page = null;
+  });
+
+  page = await browser.newPage();
+
+  await page.setViewport({
+    width: 1365,
+    height: 768
+  });
+
+  page.setDefaultNavigationTimeout(60000);
+  page.setDefaultTimeout(30000);
+
+  console.log("[BROWSER] Chrome launched successfully.");
+
+  return page;
+}
+
+// =======================================================
+// SCRIPT 07 — OPEN LOGIN PAGE
+// =======================================================
+
+async function openLoginPage() {
+  console.log("[LOGIN] Opening:", LOGIN_URL);
+
+  await page.goto(LOGIN_URL, {
+    waitUntil: "domcontentloaded",
+    timeout: 60000
+  });
+
+  await sleep(5000);
+
+  console.log("[LOGIN] Website loaded.");
+}
+
+// =======================================================
+// SCRIPT 08 — LOGIN FORM
+// =======================================================
+
+async function loginToWebsite() {
+  console.log("[LOGIN] Searching for login fields...");
+
+  const inputDetails = await page.evaluate(() => {
+    return Array.from(
+      document.querySelectorAll("input")
+    ).map((input) => ({
+      type: (input.type || "").toLowerCase(),
+      placeholder: input.placeholder || "",
+      name: input.name || "",
+      visible:
+        input.offsetWidth > 0 &&
+        input.offsetHeight > 0
+    }));
+  });
+
+  console.log(
+    "[LOGIN] Input fields:",
+    JSON.stringify(inputDetails)
+  );
+
+  const usernameSelectors = [
+    'input[placeholder*="Username" i]',
+    'input[placeholder*="Account" i]',
+    'input[placeholder*="Mobile" i]',
+    'input[placeholder*="User" i]',
+    'input[name="username"]',
+    'input[name="account"]',
+    'input[type="text"]',
+    'input:not([type])'
+  ];
+
+  const passwordSelectors = [
+    'input[type="password"]',
+    'input[placeholder*="Password" i]',
+    'input[name="password"]'
+  ];
+
+  async function findVisibleInput(selectors) {
+    for (const selector of selectors) {
+      const elements = await page.$$(selector);
+
+      for (const element of elements) {
+        const visible = await element
+          .isIntersectingViewport()
+          .catch(() => false);
+
+        if (visible) {
+          return element;
+        }
+      }
     }
 
-    if (!BOTBUSINESS_API) {
-        console.warn(
-            "[CONFIG WARNING] BOTBUSINESS_API is missing; results will not be forwarded."
-        );
-    }
+    return null;
+  }
 
-    const chromePath = getChromePath();
+  const usernameInput =
+    await findVisibleInput(usernameSelectors);
 
-    console.log("[STATUS] Launching Chrome:", chromePath);
+  const passwordInput =
+    await findVisibleInput(passwordSelectors);
 
-    browserInstance = await puppeteer.launch({
-        executablePath: chromePath,
-        headless: true,
-        args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-accelerated-2d-canvas",
-            "--disable-gpu"
-        ]
-    });
+  if (!usernameInput || !passwordInput) {
+    throw new Error(
+      "Login fields not found. Website selectors may have changed."
+    );
+  }
 
-    const page = await browserInstance.newPage();
+  await usernameInput.click();
+  await usernameInput.type(String(DEMO_USER), {
+    delay: 30
+  });
 
-    await page.setUserAgent(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/120.0.0.0 Safari/537.36"
+  await passwordInput.click();
+  await passwordInput.type(String(DEMO_PASS), {
+    delay: 30
+  });
+
+  console.log("[LOGIN] Credentials entered.");
+
+  const loginButtonClicked = await page.evaluate(() => {
+    const elements = Array.from(
+      document.querySelectorAll(
+        'button, input[type="submit"], [role="button"]'
+      )
     );
 
-    // Monitor responses for WinGo history/results.
-    page.on("response", async (response) => {
-        const url = response.url();
+    const target = elements.find((element) => {
+      const text = (
+        element.innerText ||
+        element.value ||
+        element.textContent ||
+        ""
+      ).trim().toLowerCase();
 
-        if (!url.includes("getHistory") && !url.includes("WinGo")) {
-            return;
-        }
+      const visible =
+        element.offsetWidth > 0 &&
+        element.offsetHeight > 0;
 
-        try {
-            const data = await response.json();
-
-            if (!data || !data.data || !Array.isArray(data.data.list)) {
-                return;
-            }
-
-            const latest = data.data.list[0];
-
-            if (!latest) {
-                return;
-            }
-
-            const period = latest.period || latest.issueNumber;
-            const numberResult = Number.parseInt(
-                latest.number ?? latest.resultNum,
-                10
-            );
-
-            if (
-                period == null ||
-                period === "" ||
-                !Number.isFinite(numberResult) ||
-                String(period) === lastPeriod
-            ) {
-                return;
-            }
-
-            lastPeriod = String(period);
-
-            const resultType = numberResult >= 5 ? "BIG" : "SMALL";
-
-            console.log(
-                `[LIVE RESULT] Period: ${period} | Number: ${numberResult} (${resultType})`
-            );
-
-            if (!BOTBUSINESS_API) {
-                return;
-            }
-
-            try {
-                const apiResponse = await axios.post(
-                    BOTBUSINESS_API,
-                    {
-                        command: "/api_result_receiver",
-                        options: {
-                            token: SECRET_TOKEN,
-                            period: String(period),
-                            number: String(numberResult),
-                            result: resultType,
-                            platform: "WinGo 1 Min"
-                        }
-                    },
-                    {
-                        timeout: 15000
-                    }
-                );
-
-                console.log(
-                    "[API] Result forwarded. HTTP status:",
-                    apiResponse.status
-                );
-            } catch (apiError) {
-                console.error(
-                    "[API ERROR]",
-                    apiError.response?.status || "",
-                    apiError.message
-                );
-            }
-        } catch (error) {
-            // Some responses are not JSON; ignore those responses.
-        }
+      return (
+        visible &&
+        (
+          text === "login" ||
+          text === "log in" ||
+          text === "sign in" ||
+          text === "เข้าสู่ระบบ" ||
+          text.includes("login")
+        )
+      );
     });
 
-    console.log("[LOGIN] Opening login page...");
+    if (!target) return false;
 
-    await page.goto("https://www.dmfirst0.com/#/login", {
-        waitUntil: "networkidle2",
-        timeout: 60000
-    });
+    target.click();
+    return true;
+  });
 
-    // Automatic login using environment variables.
-    try {
-        console.log("[LOGIN] Checking login form...");
+  if (!loginButtonClicked) {
+    throw new Error(
+      "Login button not found. Website selectors may have changed."
+    );
+  }
 
-        await page.waitForSelector("input", {
-            timeout: 15000
-        });
+  console.log("[LOGIN] Login button clicked.");
 
-        const inputs = await page.$$("input");
+  await sleep(7000);
 
-        if (inputs.length >= 2 && DEMO_USER && DEMO_PASS) {
-            await inputs[0].type(DEMO_USER, { delay: 100 });
-            await inputs[1].type(DEMO_PASS, { delay: 100 });
+  await dismissConfirmPopup();
+}
 
-            await page.evaluate(() => {
-                const buttons = Array.from(
-                    document.querySelectorAll("button")
-                );
+// =======================================================
+// SCRIPT 09 — DISMISS CONFIRM POPUP
+// =======================================================
 
-                const loginButton = buttons.find((element) => {
-                    const text = (element.textContent || "").toLowerCase();
+async function dismissConfirmPopup() {
+  try {
+    const clicked = await page.evaluate(() => {
+      const elements = Array.from(
+        document.querySelectorAll(
+          "button, [role='button'], .van-button, .el-button"
+        )
+      );
 
-                    return (
-                        text.includes("log") ||
-                        text.includes("登录")
-                    );
-                });
+      const target = elements.find((element) => {
+        const text = (
+          element.innerText ||
+          element.textContent ||
+          ""
+        ).trim().toLowerCase();
 
-                if (loginButton) {
-                    loginButton.click();
-                }
-            });
+        const visible =
+          element.offsetWidth > 0 &&
+          element.offsetHeight > 0;
 
-            console.log("[LOGIN] Credentials submitted.");
-            await new Promise((resolve) => setTimeout(resolve, 6000));
-        } else {
-            console.warn(
-                "[LOGIN NOTICE] Login fields or credentials are unavailable."
-            );
-        }
-    } catch (error) {
-        console.log("[LOGIN NOTICE]", error.message);
-    }
-
-    // Attempt to dismiss a confirmation popup.
-    try {
-        await page.evaluate(() => {
-            const elements = Array.from(
-                document.querySelectorAll("button, div, span")
-            );
-
-            const confirmButton = elements.find((element) => {
-                const text = (element.textContent || "").trim();
-
-                return text === "Confirm" || text === "确定";
-            });
-
-            if (confirmButton) {
-                confirmButton.click();
-            }
-        });
-    } catch (error) {
-        console.log("[POPUP NOTICE]", error.message);
-    }
-
-    console.log("[NAVIGATE] Opening lottery page...");
-
-    await page.goto("https://www.dmfirst0.com/#/lottery", {
-        waitUntil: "networkidle2",
-        timeout: 30000
-    }).catch((error) => {
-        console.log("[NAVIGATION NOTICE]", error.message);
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    // Attempt to select WinGo 1 Min.
-    await page.evaluate(() => {
-        const elements = Array.from(
-            document.querySelectorAll("div, span, a")
+        return (
+          visible &&
+          ["confirm", "ok", "close"].includes(text)
         );
+      });
 
-        const target = elements.find((element) => {
-            const text = (element.textContent || "").trim();
+      if (!target) return false;
 
-            return text === "WinGo 1M" || text === "WinGo 1 Min";
-        });
-
-        if (target) {
-            target.click();
-        }
+      target.click();
+      return true;
     });
+
+    if (clicked) {
+      console.log("[POPUP] Confirm popup dismissed.");
+      await sleep(2000);
+    } else {
+      console.log("[POPUP] No Confirm popup detected.");
+    }
+  } catch (error) {
+    console.log("[POPUP] Check failed:", error.message);
+  }
+}
+
+// =======================================================
+// SCRIPT 10 — OPEN LOTTERY / WINGO 1M
+// =======================================================
+
+async function openWinGoPage() {
+  console.log("[GAME] Opening Lottery page...");
+
+  await page.goto(
+    "https://www.dmfirst0.com/#/lottery",
+    {
+      waitUntil: "domcontentloaded",
+      timeout: 60000
+    }
+  );
+
+  await sleep(5000);
+
+  const clicked = await page.evaluate(() => {
+    const elements = Array.from(
+      document.querySelectorAll(
+        "button, a, div, span, li"
+      )
+    );
+
+    const target = elements.find((element) => {
+      const text = (
+        element.innerText ||
+        element.textContent ||
+        ""
+      ).trim().toLowerCase();
+
+      const visible =
+        element.offsetWidth > 0 &&
+        element.offsetHeight > 0;
+
+      return (
+        visible &&
+        [
+          "wingo 1m",
+          "wingo 1 min",
+          "win go 1m"
+        ].includes(text)
+      );
+    });
+
+    if (!target) return false;
+
+    target.click();
+    return true;
+  });
+
+  if (clicked) {
+    console.log("[GAME] WinGo 1M selected.");
+  } else {
+    console.log(
+      "[GAME] WinGo 1M not detected. Website layout may have changed."
+    );
+  }
+
+  await sleep(5000);
+}
+
+// =======================================================
+// SCRIPT 11 — EXTRACT RESULT
+// =======================================================
+
+function extractResult(responseData) {
+  if (
+    !responseData ||
+    typeof responseData !== "object"
+  ) {
+    return null;
+  }
+
+  let list = null;
+
+  if (
+    responseData.data &&
+    Array.isArray(responseData.data.list)
+  ) {
+    list = responseData.data.list;
+  } else if (Array.isArray(responseData.list)) {
+    list = responseData.list;
+  } else if (
+    responseData.data &&
+    Array.isArray(responseData.data)
+  ) {
+    list = responseData.data;
+  }
+
+  if (!list || list.length === 0) {
+    return null;
+  }
+
+  const item = list[0];
+
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  const period =
+    item.issueNumber ??
+    item.issue ??
+    item.period ??
+    item.periodNumber ??
+    item.drawNumber;
+
+  const rawNumber =
+    item.number ??
+    item.result ??
+    item.openNumber ??
+    item.winNumber;
+
+  if (
+    period === undefined ||
+    period === null ||
+    rawNumber === undefined ||
+    rawNumber === null
+  ) {
+    return null;
+  }
+
+  let number;
+
+  if (typeof rawNumber === "number") {
+    number = rawNumber;
+  } else {
+    const cleaned = String(rawNumber).trim();
+
+    if (!/^\d+$/.test(cleaned)) {
+      return null;
+    }
+
+    number = Number(cleaned);
+  }
+
+  if (
+    !Number.isFinite(number) ||
+    number < 0 ||
+    number > 9
+  ) {
+    return null;
+  }
+
+  return {
+    period: String(period),
+    number,
+    result: number >= 5 ? "BIG" : "SMALL"
+  };
+}
+
+// =======================================================
+// SCRIPT 12 — FORWARD RESULT TO BOT BUSINESS
+// =======================================================
+
+async function sendResultToBotBusiness(resultData) {
+  try {
+    const payload = {
+      command: "/api_result_receiver",
+      options: {
+        token: SECRET_TOKEN,
+        period: resultData.period,
+        number: resultData.number,
+        result: resultData.result,
+        platform: "DMFirst WinGo 1M"
+      }
+    };
 
     console.log(
-        "[SUCCESS] Worker is running. Result monitoring is enabled."
+      "[API] Sending period:",
+      resultData.period
     );
 
-    // Keep the browser session active.
-    setInterval(async () => {
-        try {
-            if (page.isClosed()) {
-                return;
-            }
-
-            await page.evaluate(() => {
-                window.scrollBy(0, 10);
-                window.scrollBy(0, -10);
-            });
-        } catch (error) {
-            console.log("[KEEPALIVE NOTICE]", error.message);
+    const response = await axios.post(
+      BOTBUSINESS_API,
+      payload,
+      {
+        timeout: 20000,
+        headers: {
+          "Content-Type": "application/json"
         }
-    }, 15000);
+      }
+    );
+
+    console.log(
+      "[API] Response status:",
+      response.status
+    );
+
+    console.log(
+      "[API] Result forwarded:",
+      resultData.period,
+      resultData.number,
+      resultData.result
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      "[API] Forwarding failed:",
+      error.response
+        ? JSON.stringify(error.response.data)
+        : error.message
+    );
+
+    return false;
+  }
 }
 
-startBot().catch((error) => {
-    console.error("[FATAL] Worker startup failed:", error);
+// =======================================================
+// SCRIPT 13 — NETWORK RESPONSE MONITOR
+// =======================================================
 
-    if (browserInstance) {
-        browserInstance.close().catch(() => {});
+function setupResponseMonitor() {
+  console.log("[MONITOR] Activating response listener...");
+
+  page.on("response", async (response) => {
+    try {
+      const url = response.url();
+
+      if (
+        !url.includes("getHistory") &&
+        !url.includes("WinGo")
+      ) {
+        return;
+      }
+
+      if (!response.ok()) return;
+
+      const contentType =
+        response.headers()["content-type"] || "";
+
+      if (
+        !contentType.includes("json") &&
+        !url.includes("getHistory")
+      ) {
+        return;
+      }
+
+      let responseData;
+
+      try {
+        responseData = await response.json();
+      } catch (error) {
+        return;
+      }
+
+      const extracted = extractResult(responseData);
+
+      if (!extracted) return;
+
+      const resultKey =
+        extracted.period + ":" + extracted.number;
+
+      if (resultKey === lastResultKey) return;
+
+      lastResultKey = resultKey;
+
+      console.log(
+        "[RESULT]",
+        JSON.stringify(extracted)
+      );
+
+      await sendResultToBotBusiness(extracted);
+    } catch (error) {
+      console.error(
+        "[MONITOR] Processing error:",
+        error.message
+      );
+    }
+  });
+
+  console.log("[MONITOR] Listener active.");
+}
+
+// =======================================================
+// SCRIPT 14 — KEEPALIVE
+// =======================================================
+
+function startKeepAlive() {
+  if (keepAliveTimer) {
+    clearInterval(keepAliveTimer);
+  }
+
+  console.log("[KEEPALIVE] Starting 15-second loop.");
+
+  keepAliveTimer = setInterval(async () => {
+    try {
+      if (
+        !browser ||
+        !browser.isConnected() ||
+        !page ||
+        page.isClosed()
+      ) {
+        return;
+      }
+
+      await page.evaluate(() => {
+        window.scrollBy(0, 1);
+        window.scrollBy(0, -1);
+      });
+    } catch (error) {
+      console.error(
+        "[KEEPALIVE] Error:",
+        error.message
+      );
+    }
+  }, 15000);
+}
+
+// =======================================================
+// SCRIPT 15 — START WORKER
+// =======================================================
+
+async function startWorker() {
+  if (workerStarting || workerStarted) {
+    console.log("[WORKER] Already starting or running.");
+    return;
+  }
+
+  workerStarting = true;
+
+  try {
+    validateConfiguration();
+
+    console.log("[WORKER] Starting...");
+
+    await launchBrowser();
+
+    setupResponseMonitor();
+
+    await openLoginPage();
+
+    await loginToWebsite();
+
+    await openWinGoPage();
+
+    workerStarted = true;
+
+    console.log("[WORKER] Startup sequence completed.");
+
+    startKeepAlive();
+  } catch (error) {
+    workerStarted = false;
+
+    console.error(
+      "[WORKER] Startup failed:",
+      error.stack || error.message
+    );
+
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (closeError) {
+        console.error(
+          "[BROWSER] Close error:",
+          closeError.message
+        );
+      }
     }
 
-    process.exitCode = 1;
+    browser = null;
+    page = null;
+  } finally {
+    workerStarting = false;
+  }
+}
+
+// =======================================================
+// SCRIPT 16 — EXPRESS SERVER
+// =======================================================
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("[SERVER] Listening on port:", PORT);
+
+  console.log("[SERVER] Health endpoint: /health");
+
+  startWorker().catch((error) => {
+    console.error(
+      "[WORKER] Unexpected error:",
+      error.stack || error.message
+    );
+  });
+});
+
+// =======================================================
+// SCRIPT 17 — PROCESS ERROR HANDLERS
+// =======================================================
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[PROCESS] Unhandled rejection:", reason);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error(
+    "[PROCESS] Uncaught exception:",
+    error.stack || error.message
+  );
 });
