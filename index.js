@@ -7,13 +7,11 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "AapkaSecretToken123";
 let AUTH_TOKEN = process.env.AUTH_TOKEN || "";
 
-// Space & newlines clean up
 AUTH_TOKEN = AUTH_TOKEN.replace(/\s+/g, '').trim();
-
 let lastPeriod = "";
 
 app.get('/', (req, res) => {
-  res.send('DmFirst WinGo 1 Min Worker Active!');
+  res.send('DmFirst Worker Active!');
 });
 
 app.listen(PORT, () => {
@@ -22,22 +20,19 @@ app.listen(PORT, () => {
 
 async function fetchWinGo1MResult() {
   try {
-    // Endpoints for DmFirst SaaS Lottery history
-    const API_URL = `https://api.dmfirst9api.com/api/web/game/getHistory?gameCode=WinGo_1M&pageSize=10&pageNo=1`;
-
-    const cleanToken = AUTH_TOKEN.replace(/^Bearer\s+/i, '');
+    // Standard frontend proxy path fallback
+    const API_URL = `https://www.dmfirst0.com/web/game/getHistory?gameCode=WinGo_1M`;
 
     const response = await axios.get(API_URL, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
-        'Authorization': cleanToken,
-        'token': cleanToken,
-        'tenant': 'ar103',
-        'Referer': 'https://www.dmfirst0.com/',
+        'Authorization': AUTH_TOKEN,
+        'token': AUTH_TOKEN,
+        'Referer': 'https://www.dmfirst0.com/#/saasLottery/',
         'Origin': 'https://www.dmfirst0.com'
       },
-      timeout: 6000
+      timeout: 8000
     });
 
     if (response.data && response.data.data && response.data.data.list) {
@@ -47,8 +42,6 @@ async function fetchWinGo1MResult() {
 
       if (period && period !== lastPeriod) {
         lastPeriod = period;
-
-        // Result Logic: 5-9 = WIN, 0-4 = LOSS
         const resultType = (numberResult >= 5) ? "WIN" : "LOSS";
 
         if (BOT_TOKEN) {
@@ -72,5 +65,4 @@ async function fetchWinGo1MResult() {
   }
 }
 
-// Check every 8 seconds
 setInterval(fetchWinGo1MResult, 8000);
