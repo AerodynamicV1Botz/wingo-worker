@@ -1,23 +1,28 @@
 const fs = require("fs");
+const path = require("path");
 const puppeteer = require("puppeteer");
+const express = require("express");
+const axios = require("axios");
 
-console.log("[DEBUG] Puppeteer version:", require("puppeteer/package.json").version);
-console.log("[DEBUG] Cache directory:", process.env.PUPPETEER_CACHE_DIR || "default");
-console.log("[DEBUG] Expected Chrome path:", puppeteer.executablePath());
-console.log("[DEBUG] Chrome exists:", fs.existsSync(puppeteer.executablePath()));
-const puppeteer = require('puppeteer');
-const express = require('express');
-const axios = require('axios');
+console.log(
+    "[DEBUG] Puppeteer version:",
+    require("puppeteer/package.json").version
+);
+
+console.log(
+    "[DEBUG] Cache directory:",
+    process.env.PUPPETEER_CACHE_DIR || "default"
+);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
-    res.send('DmFirst WinGo 1M Worker Active 24/7!');
+app.get("/", (req, res) => {
+    res.status(200).send("DmFirst WinGo 1M Worker Active 24/7!");
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`[SERVER] Running on port ${PORT}`);
 });
 
 const BOTBUSINESS_API = process.env.BOTBUSINESS_API;
@@ -26,115 +31,303 @@ const DEMO_USER = process.env.DEMO_USER;
 const DEMO_PASS = process.env.DEMO_PASS;
 
 let lastPeriod = "";
+let browserInstance = null;
+
+function getChromePath() {
+    // First check Puppeteer's expected bundled Chrome path.
+    try {
+        const bundledPath = puppeteer.executablePath();
+
+        console.log("[DEBUG] Expected Chrome path:", bundledPath);
+        console.log(
+            "[DEBUG] Bundled Chrome exists:",
+            fs.existsSync(bundledPath)
+        );
+
+        if (fs.existsSync(bundledPath)) {
+            return bundledPath;
+        }
+    } catch (error) {
+        console.log("[DEBUG] Bundled Chrome lookup failed:", error.message);
+    }
+
+    // Optional explicit path for a Chrome installation on the host.
+    const configuredPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+
+    if (configuredPath && fs.existsSync(configuredPath)) {
+        console.log("[DEBUG] Using configured Chrome:", configuredPath);
+        return configuredPath;
+    }
+
+    // Search common Linux executable locations.
+    const candidates = [
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser"
+    ];
+
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            console.log("[DEBUG] Using system Chrome:", candidate);
+            return candidate;
+        }
+    }
+
+    throw new Error(
+        "Chrome executable not found. Ensure Puppeteer's Chrome is installed " +
+        "during the Render build, or set PUPPETEER_EXECUTABLE_PATH."
+    );
+}
 
 async function startBot() {
-    console.log("[STATUS] Launching Puppeteer Browser on Render...");
-    
-    const browser = await puppeteer.launch({
-        executablePath: puppeteer.executablePath(),
-        headless: "new",
+    console.log("[STATUS] Starting WinGo worker...");
+
+    if (!DEMO_USER || !DEMO_PASS) {
+        console.warn(
+            "[CONFIG WARNING] DEMO_USER or DEMO_PASS is missing."
+        );
+    }
+
+    if (!BOTBUSINESS_API) {
+        console.warn(
+            "[CONFIG WARNING] BOTBUSINESS_API is missing; results will not be forwarded."
+        );
+    }
+
+    const chromePath = getChromePath();
+
+    console.log("[STATUS] Launching Chrome:", chromePath);
+
+    browserInstance = await puppeteer.launch({
+        executablePath: chromePath,
+        headless: true,
         args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--disable-gpu'
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
+            "--disable-gpu"
         ]
     });
 
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    const page = await browserInstance.newPage();
 
-    // Network Interceptor for WinGo Live Results
-    page.on('response', async (response) => {
+    await page.setUserAgent(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/120.0.0.0 Safari/537.36"
+    );
+
+    // Monitor responses for WinGo history/results.
+    page.on("response", async (response) => {
         const url = response.url();
-        if (url.includes('getHistory') || url.includes('WinGo')) {
+
+        if (!url.includes("getHistory") && !url.includes("WinGo")) {
+            return;
+        }
+
+        try {
+            const data = await response.json();
+
+            if (!data || !data.data || !Array.isArray(data.data.list)) {
+                return;
+            }
+
+            const latest = data.data.list[0];
+
+            if (!latest) {
+                return;
+            }
+
+            const period = latest.period || latest.issueNumber;
+            const numberResult = Number.parseInt(
+                latest.number ?? latest.resultNum,
+                10
+            );
+
+            if (
+                period == null ||
+                period === "" ||
+                !Number.isFinite(numberResult) ||
+                String(period) === lastPeriod
+            ) {
+                return;
+            }
+
+            lastPeriod = String(period);
+
+            const resultType = numberResult >= 5 ? "BIG" : "SMALL";
+
+            console.log(
+                `[LIVE RESULT] Period: ${period} | Number: ${numberResult} (${resultType})`
+            );
+
+            if (!BOTBUSINESS_API) {
+                return;
+            }
+
             try {
-                const data = await response.json();
-                if (data && data.data && data.data.list) {
-                    const latest = data.data.list[0];
-                    const period = latest.period || latest.issueNumber;
-                    const numberResult = parseInt(latest.number || latest.resultNum);
-
-                    if (period && period !== lastPeriod) {
-                        lastPeriod = period;
-                        const resultType = (numberResult >= 5) ? "BIG" : "SMALL";
-                        console.log(`[LIVE RESULT] Period: ${period} | Number: ${numberResult} (${resultType})`);
-
-                        if (BOTBUSINESS_API) {
-                            await axios.post(BOTBUSINESS_API, {
-                                command: "/api_result_receiver",
-                                options: {
-                                    token: SECRET_TOKEN,
-                                    period: String(period),
-                                    number: String(numberResult),
-                                    result: resultType,
-                                    platform: "WinGo 1 Min"
-                                }
-                            });
+                const apiResponse = await axios.post(
+                    BOTBUSINESS_API,
+                    {
+                        command: "/api_result_receiver",
+                        options: {
+                            token: SECRET_TOKEN,
+                            period: String(period),
+                            number: String(numberResult),
+                            result: resultType,
+                            platform: "WinGo 1 Min"
                         }
+                    },
+                    {
+                        timeout: 15000
                     }
-                }
-            } catch (e) {}
+                );
+
+                console.log(
+                    "[API] Result forwarded. HTTP status:",
+                    apiResponse.status
+                );
+            } catch (apiError) {
+                console.error(
+                    "[API ERROR]",
+                    apiError.response?.status || "",
+                    apiError.message
+                );
+            }
+        } catch (error) {
+            // Some responses are not JSON; ignore those responses.
         }
     });
 
-    console.log("[LOGIN] Navigating to Login Page...");
-    await page.goto('https://www.dmfirst0.com/#/login', { waitUntil: 'networkidle2', timeout: 60000 });
+    console.log("[LOGIN] Opening login page...");
 
-    // Automatic Login Handling using env credentials
+    await page.goto("https://www.dmfirst0.com/#/login", {
+        waitUntil: "networkidle2",
+        timeout: 60000
+    });
+
+    // Automatic login using environment variables.
     try {
-        console.log("[LOGIN] Filling credentials...");
-        await page.waitForSelector('input', { timeout: 15000 });
-        
-        const inputs = await page.$$('input');
-        if (inputs.length >= 2) {
+        console.log("[LOGIN] Checking login form...");
+
+        await page.waitForSelector("input", {
+            timeout: 15000
+        });
+
+        const inputs = await page.$$("input");
+
+        if (inputs.length >= 2 && DEMO_USER && DEMO_PASS) {
             await inputs[0].type(DEMO_USER, { delay: 100 });
             await inputs[1].type(DEMO_PASS, { delay: 100 });
+
+            await page.evaluate(() => {
+                const buttons = Array.from(
+                    document.querySelectorAll("button")
+                );
+
+                const loginButton = buttons.find((element) => {
+                    const text = (element.textContent || "").toLowerCase();
+
+                    return (
+                        text.includes("log") ||
+                        text.includes("登录")
+                    );
+                });
+
+                if (loginButton) {
+                    loginButton.click();
+                }
+            });
+
+            console.log("[LOGIN] Credentials submitted.");
+            await new Promise((resolve) => setTimeout(resolve, 6000));
+        } else {
+            console.warn(
+                "[LOGIN NOTICE] Login fields or credentials are unavailable."
+            );
         }
-
-        // Click login button
-        await page.evaluate(() => {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            const loginBtn = buttons.find(el => el.textContent.toLowerCase().includes('log') || el.textContent.includes('登录'));
-            if (loginBtn) loginBtn.click();
-        });
-
-        console.log("[LOGIN] Credentials submitted, waiting for dashboard...");
-        await page.waitForTimeout(6000);
-    } catch (err) {
-        console.log("[LOGIN NOTICE] Manual input skipped or already logged in:", err.message);
+    } catch (error) {
+        console.log("[LOGIN NOTICE]", error.message);
     }
 
-    // Popup Confirm handling
+    // Attempt to dismiss a confirmation popup.
     try {
         await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button, div, span'));
-            const confirmBtn = btns.find(el => el.textContent.trim() === 'Confirm' || el.textContent.trim() === '确定');
-            if (confirmBtn) confirmBtn.click();
+            const elements = Array.from(
+                document.querySelectorAll("button, div, span")
+            );
+
+            const confirmButton = elements.find((element) => {
+                const text = (element.textContent || "").trim();
+
+                return text === "Confirm" || text === "确定";
+            });
+
+            if (confirmButton) {
+                confirmButton.click();
+            }
         });
-    } catch(e) {}
+    } catch (error) {
+        console.log("[POPUP NOTICE]", error.message);
+    }
 
-    console.log("[NAVIGATE] Moving to Lottery -> WinGo 1 Min...");
-    await page.goto('https://www.dmfirst0.com/#/lottery', { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
-    await page.waitForTimeout(3000);
+    console.log("[NAVIGATE] Opening lottery page...");
 
-    // Click WinGo 1 Min game section
-    await page.evaluate(() => {
-        const elements = Array.from(document.querySelectorAll('div, span, a'));
-        const target = elements.find(el => el.textContent.includes('WinGo 1M') || el.textContent.includes('WinGo 1 Min'));
-        if (target) target.click();
+    await page.goto("https://www.dmfirst0.com/#/lottery", {
+        waitUntil: "networkidle2",
+        timeout: 30000
+    }).catch((error) => {
+        console.log("[NAVIGATION NOTICE]", error.message);
     });
 
-    console.log("[SUCCESS] Worker active and monitoring WinGo 1 Min results!");
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    // Keep session alive with small scrolls
+    // Attempt to select WinGo 1 Min.
+    await page.evaluate(() => {
+        const elements = Array.from(
+            document.querySelectorAll("div, span, a")
+        );
+
+        const target = elements.find((element) => {
+            const text = (element.textContent || "").trim();
+
+            return text === "WinGo 1M" || text === "WinGo 1 Min";
+        });
+
+        if (target) {
+            target.click();
+        }
+    });
+
+    console.log(
+        "[SUCCESS] Worker is running. Result monitoring is enabled."
+    );
+
+    // Keep the browser session active.
     setInterval(async () => {
         try {
-            await page.evaluate(() => window.scrollBy(0, 10));
-            await page.evaluate(() => window.scrollBy(0, -10));
-        } catch (err) {}
+            if (page.isClosed()) {
+                return;
+            }
+
+            await page.evaluate(() => {
+                window.scrollBy(0, 10);
+                window.scrollBy(0, -10);
+            });
+        } catch (error) {
+            console.log("[KEEPALIVE NOTICE]", error.message);
+        }
     }, 15000);
 }
 
-startBot().catch(console.error);
+startBot().catch((error) => {
+    console.error("[FATAL] Worker startup failed:", error);
+
+    if (browserInstance) {
+        browserInstance.close().catch(() => {});
+    }
+
+    process.exitCode = 1;
+});
