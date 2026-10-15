@@ -1,7 +1,7 @@
 /*
 =========================================================
  PROJECT : DmFirst WinGo 1M Worker
- PURPOSE : Complete Final Code - Login, Navigation & Dual Scraper
+ PURPOSE : Clean & Direct DOM Period/Number Scraper
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
@@ -93,7 +93,6 @@ async function launchBrowser() {
   return page;
 }
 
-// 1. Dismiss multiple popups (Confirm buttons)
 async function clearAllPopups() {
   console.log("[POPUP] Checking for warning/announcement popups...");
   for (let i = 0; i < 4; i++) {
@@ -118,7 +117,6 @@ async function clearAllPopups() {
   }
 }
 
-// 2. Step-by-Step UI Navigation
 async function navigateToWinGo1M() {
   console.log("[NAVIGATION] Starting step-by-step navigation...");
 
@@ -181,7 +179,6 @@ async function navigateToWinGo1M() {
   console.log("[NAVIGATION] Navigation complete! Now active on WinGo 1M Game History.");
 }
 
-// 3. API Forwarding Function
 async function sendResultToBotBusiness(resultData) {
   try {
     const payload = {
@@ -212,73 +209,60 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// 4. Dual Scraper (Network + HTML Inspector)
+// Robust Direct DOM Scraper
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Full URL Debugger & Inspector...");
+  console.log("[MONITOR] Starting Direct DOM Scanner Loop...");
 
-  // Sabhi incoming network requests ke URL print karega taaki exact API pata chale
-  page.on("request", (request) => {
-    const url = request.url();
-    if (url.includes("api") || url.includes("game") || url.includes("lottery") || url.includes("Record") || url.includes("History")) {
-      console.log("[DEBUG REQUEST URL]:", url);
-    }
-  });
-
-  page.on("response", async (response) => {
-    try {
-      const url = response.url();
-      if (!response.ok()) return;
-
-      // Agar koi bhi game ya history se milti julti response aayi
-      if (url.includes("history") || url.includes("list") || url.includes("game") || url.includes("WinGo") || url.includes("lottery") || url.includes("open")) {
-        let json;
-        try { json = await response.json(); } catch (e) { return; }
-
-        console.log("[API RESPONSE FOUND]:", url);
-        console.log("[API DATA]:", JSON.stringify(json).substring(0, 300)); // First 300 chars
-
-        let list = (json && json.data) ? (json.data.list || json.data) : (json ? json.list : null);
-        if (Array.isArray(list) && list.length > 0) {
-          const item = list[0];
-          const period = item.issueNumber || item.issue || item.period || item.periodNumber || item.gameNo;
-          const num = item.number ?? item.result ?? item.openNumber;
-
-          if (period && num !== undefined) {
-            const number = parseInt(num);
-            const key = period + ":" + number;
-            if (key !== lastResultKey) {
-              lastResultKey = key;
-              const resultType = number >= 5 ? "BIG" : "SMALL";
-              console.log("[SUCCESSFUL CAPTURE]:", period, number, resultType);
-              await sendResultToBotBusiness({ period: String(period), number, result: resultType });
-            }
-          }
-        }
-      }
-    } catch (err) {}
-  });
-
-  // HTML Scraper Fallback
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
-      const pageText = await page.evaluate(() => document.documentElement ? document.documentElement.innerText : "");
-      const periodMatch = pageText.match(/202[5-9]\d{10,14}/);
-      if (periodMatch) {
-        const period = periodMatch[0];
-        const digits = pageText.match(/\b[0-9]\b/g);
-        if (digits && digits.length > 0) {
-          const number = parseInt(digits[digits.length - 1]);
-          const key = period + ":" + number;
-          if (key !== lastResultKey) {
-            lastResultKey = key;
-            const resultType = number >= 5 ? "BIG" : "SMALL";
-            console.log("[HTML SCRAPED SUCCESS]:", period, number, resultType);
-            await sendResultToBotBusiness({ period: String(period), number, result: resultType });
+
+      const scannedData = await page.evaluate(() => {
+        // Poore page ka text uthao
+        const bodyText = document.body ? document.body.innerText : "";
+        
+        // 14-digit period match karo (jaise 20261015...)
+        const pMatch = bodyText.match(/202[5-9]\d{10,14}/);
+        if (!pMatch) return { error: "Period not found in DOM" };
+
+        const period = pMatch[0];
+
+        // Table ya rows se numbers dhoondo
+        const elements = Array.from(document.querySelectorAll('tr, .van-row, div, span'));
+        for (let el of elements) {
+          const txt = el.innerText || "";
+          if (txt.includes(period)) {
+            const digits = txt.match(/\b[0-9]\b/g);
+            if (digits && digits.length > 0) {
+              const number = parseInt(digits[0]);
+              if (!isNaN(number) && number >= 0 && number <= 9) {
+                return { period, number };
+              }
+            }
           }
         }
+        return { error: "Period found but row number missing" };
+      });
+
+      if (scannedData.period && scannedData.number !== undefined) {
+        const key = scannedData.period + ":" + scannedData.number;
+        if (key !== lastResultKey) {
+          lastResultKey = key;
+          const resultType = scannedData.number >= 5 ? "BIG" : "SMALL";
+          console.log("[SCRAPED SUCCESS]:", scannedData.period, scannedData.number, resultType);
+
+          await sendResultToBotBusiness({
+            period: String(scannedData.period),
+            number: scannedData.number,
+            result: resultType
+          });
+        }
+      } else {
+        console.log("[DOM SCAN STATUS]:", scannedData.error);
       }
-    } catch (err) {}
+    } catch (err) {
+      console.error("[DOM SCANNER ERROR]:", err.message);
+    }
   }, 4000);
 }
 
