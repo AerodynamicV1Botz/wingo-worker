@@ -173,6 +173,9 @@ async function launchBrowser() {
       "--disable-dev-shm-usage",
       "--disable-gpu",
       "--no-zygote",
+      "--single-process", // Render ke low RAM (512MB) ke liye sabse important
+      "--disable-software-rasterizer",
+      "--disable-extensions",
       "--disable-background-networking",
       "--disable-background-timer-throttling",
       "--disable-renderer-backgrounding",
