@@ -21,7 +21,7 @@ app.listen(PORT, () => {
 async function fetchWinGoResult() {
   try {
     // Correct API domain with /api/ prefix and exact game parameters
-    const API_URL = `https://api.dmfirst9api.com/api/web/game/getHistory?gameCode=WinGo_30S&lottery=WinGo`;
+    const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=WinGo_30S&lottery=WinGo`;
 
     const response = await axios.get(API_URL, {
       headers: {
