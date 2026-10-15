@@ -1,4 +1,4 @@
-const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer');
 const express = require('express');
 const axios = require('axios');
 
@@ -23,9 +23,8 @@ let lastPeriod = "";
 async function startBot() {
     console.log("[STATUS] Launching Puppeteer Browser on Render...");
     
-    // Yeh automatically Render ke cache folder mein jo bhi latest chrome hoga use utha lega
     const browser = await puppeteer.launch({
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || require('puppeteer').executablePath(),
+        executablePath: puppeteer.executablePath(),
         headless: "new",
         args: [
             '--no-sandbox',
@@ -39,6 +38,7 @@ async function startBot() {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
 
+    // Network Interceptor for WinGo Live Results
     page.on('response', async (response) => {
         const url = response.url();
         if (url.includes('getHistory') || url.includes('WinGo')) {
