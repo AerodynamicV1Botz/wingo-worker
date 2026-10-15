@@ -23,8 +23,8 @@ let lastPeriod = "";
 async function startBot() {
     console.log("[STATUS] Launching Puppeteer Browser on Render...");
     
+    // Yahan se 'executablePath' hata diya hai taaki Puppeteer khud browser detect kar le
     const browser = await puppeteer.launch({
-        executablePath: '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome', // Explicit path
         headless: "new",
         args: [
             '--no-sandbox',
