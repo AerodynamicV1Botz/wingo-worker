@@ -20,7 +20,7 @@ app.listen(PORT, () => {
 
 async function fetchWinGoResult() {
   try {
-    // Combined official API endpoint matching frontend configuration and parameters
+    // Correct backend API URL without any frontend hash /#/
     const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?/#/saasLottery/WinGo?gameCode=WinGo_1M&lottery=WinGo&tenant=ar103`;
 
     const response = await axios.get(API_URL, {
