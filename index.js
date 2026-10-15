@@ -6,18 +6,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-    res.send('WinGo Worker Active 24/7 on Render!');
+    res.send('DmFirst WinGo 1M Worker Active 24/7!');
 });
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.botbusiness.net/v1/bots/YOUR_BOT_ID/runs";
-const SECRET_TOKEN = process.env.SECRET_TOKEN || "Aapka_Secret_Token";
-
-const DEMO_USER = "922878117";
-const DEMO_PASS = "Demo1432";
+// Secrets ko Render Environment Variables se fetch kar rahe hain
+const BOTBUSINESS_API = process.env.BOTBUSINESS_API;
+const SECRET_TOKEN = process.env.SECRET_TOKEN;
+const DEMO_USER = process.env.DEMO_USER;
+const DEMO_PASS = process.env.DEMO_PASS;
 
 let lastPeriod = "";
 
@@ -53,16 +53,18 @@ async function startBot() {
                         const resultType = (numberResult >= 5) ? "BIG" : "SMALL";
                         console.log(`[LIVE RESULT] Period: ${period} | Number: ${numberResult} (${resultType})`);
 
-                        await axios.post(BOTBUSINESS_API, {
-                            command: "/api_result_receiver",
-                            options: {
-                                token: SECRET_TOKEN,
-                                period: String(period),
-                                number: String(numberResult),
-                                result: resultType,
-                                platform: "WinGo 1 Min"
-                            }
-                        });
+                        if (BOTBUSINESS_API) {
+                            await axios.post(BOTBUSINESS_API, {
+                                command: "/api_result_receiver",
+                                options: {
+                                    token: SECRET_TOKEN,
+                                    period: String(period),
+                                    number: String(numberResult),
+                                    result: resultType,
+                                    platform: "WinGo 1 Min"
+                                }
+                            });
+                        }
                     }
                 }
             } catch (e) {}
