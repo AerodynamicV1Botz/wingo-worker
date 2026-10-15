@@ -21,7 +21,7 @@ app.listen(PORT, () => {
 async function fetchWinGoResult() {
   try {
     // Both endpoints to guarantee fallback
-    const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=WinGo_30S&tenant=ar103`;
+    const API_URL = `https://www.dmfirst0.com/#/saasLottery/WinGo?gameCode=WinGo_1M&lottery=WinGo`;
 
     const response = await axios.get(API_URL, {
       headers: {
