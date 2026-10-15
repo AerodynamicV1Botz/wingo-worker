@@ -7,11 +7,12 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "AapkaSecretToken123";
 let AUTH_TOKEN = process.env.AUTH_TOKEN || "";
 
+// Clean spaces and newlines
 AUTH_TOKEN = AUTH_TOKEN.replace(/\s+/g, '').trim();
 let lastPeriod = "";
 
 app.get('/', (req, res) => {
-  res.send('DmFirst Worker Active 24/7!');
+  res.send('DmFirst WinGo 1 Min Worker Active 24/7!');
 });
 
 app.listen(PORT, () => {
@@ -20,8 +21,8 @@ app.listen(PORT, () => {
 
 async function fetchWinGo1MResult() {
   try {
-    // Direct Official API Backend URL from config
-    const API_URL = `https://api.dmfirst9api.com/api/web/game/getHistory?gameCode=WinGo_1M&pageSize=10&pageNo=1`;
+    // Exact correct API endpoint without duplicate /api/ prefix
+    const API_URL = `https://api.dmfirst9api.com/web/game/getHistory?gameCode=WinGo_1M`;
 
     const response = await axios.get(API_URL, {
       headers: {
@@ -29,7 +30,6 @@ async function fetchWinGo1MResult() {
         'Accept': 'application/json, text/plain, */*',
         'Authorization': AUTH_TOKEN,
         'token': AUTH_TOKEN,
-        'tenant': 'ar103',
         'Referer': 'https://www.dmfirst0.com/',
         'Origin': 'https://www.dmfirst0.com'
       },
