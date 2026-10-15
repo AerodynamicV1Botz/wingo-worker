@@ -465,31 +465,24 @@ async function openWinGoPage() {
 }
 
 // =======================================================
-// SCRIPT 11 — EXTRACT RESULT
+// SCRIPT 11 — EXTRACT RESULT (ENHANCED FIELD EXTRACTOR)
 // =======================================================
 
 function extractResult(responseData) {
-  if (
-    !responseData ||
-    typeof responseData !== "object"
-  ) {
+  if (!responseData || typeof responseData !== "object") {
     return null;
   }
 
   let list = null;
 
-  if (
-    responseData.data &&
-    Array.isArray(responseData.data.list)
-  ) {
+  if (responseData.data && Array.isArray(responseData.data.list)) {
     list = responseData.data.list;
   } else if (Array.isArray(responseData.list)) {
     list = responseData.list;
-  } else if (
-    responseData.data &&
-    Array.isArray(responseData.data)
-  ) {
+  } else if (responseData.data && Array.isArray(responseData.data)) {
     list = responseData.data;
+  } else if (Array.isArray(responseData)) {
+    list = responseData;
   }
 
   if (!list || list.length === 0) {
@@ -507,20 +500,19 @@ function extractResult(responseData) {
     item.issue ??
     item.period ??
     item.periodNumber ??
-    item.drawNumber;
+    item.drawNumber ??
+    item.gameNo ??
+    item.issuecode;
 
   const rawNumber =
     item.number ??
     item.result ??
     item.openNumber ??
-    item.winNumber;
+    item.winNumber ??
+    item.winNum ??
+    item.ball;
 
-  if (
-    period === undefined ||
-    period === null ||
-    rawNumber === undefined ||
-    rawNumber === null
-  ) {
+  if (period === undefined || period === null || rawNumber === undefined || rawNumber === null) {
     return null;
   }
 
@@ -538,16 +530,12 @@ function extractResult(responseData) {
     number = Number(cleaned);
   }
 
-  if (
-    !Number.isFinite(number) ||
-    number < 0 ||
-    number > 9
-  ) {
+  if (!Number.isFinite(number) || number < 0 || number > 9) {
     return null;
   }
 
   return {
-    period: String(period),
+    period: String(period).trim(),
     number,
     result: number >= 5 ? "BIG" : "SMALL"
   };
@@ -570,10 +558,9 @@ async function sendResultToBotBusiness(resultData) {
       }
     };
 
-    console.log(
-      "[API] Sending period:",
-      resultData.period
-    );
+    console.log("==================================================");
+    console.log("[API REQUEST SENT TO BOTBUSINESS]");
+    console.log("[API PAYLOAD]:", JSON.stringify(payload));
 
     const response = await axios.post(
       BOTBUSINESS_API,
@@ -586,22 +573,14 @@ async function sendResultToBotBusiness(resultData) {
       }
     );
 
-    console.log(
-      "[API] Response status:",
-      response.status
-    );
-
-    console.log(
-      "[API] Result forwarded:",
-      resultData.period,
-      resultData.number,
-      resultData.result
-    );
+    console.log("[API RESPONSE STATUS]:", response.status);
+    console.log("[API RESPONSE DATA]:", JSON.stringify(response.data));
+    console.log("==================================================");
 
     return true;
   } catch (error) {
     console.error(
-      "[API] Forwarding failed:",
+      "[API FORWARDING FAILED]:",
       error.response
         ? JSON.stringify(error.response.data)
         : error.message
@@ -612,7 +591,7 @@ async function sendResultToBotBusiness(resultData) {
 }
 
 // =======================================================
-// SCRIPT 13 — NETWORK RESPONSE MONITOR (UPDATED & ENHANCED)
+// SCRIPT 13 — NETWORK RESPONSE MONITOR (REAL-TIME LOGGING)
 // =======================================================
 
 function setupResponseMonitor() {
@@ -628,7 +607,8 @@ function setupResponseMonitor() {
         url.includes("WinGo") || 
         url.includes("GetNoList") || 
         url.includes("GetGame") ||
-        url.includes("lottery");
+        url.includes("lottery") ||
+        url.includes("history");
 
       if (!isGameApi) return;
       if (!response.ok()) return;
@@ -645,7 +625,7 @@ function setupResponseMonitor() {
       const extracted = extractResult(responseData);
 
       if (!extracted) {
-        console.log("[API DEBUG] JSON structure did not match extractor.");
+        console.log("[API DEBUG JSON SNIPPET]:", JSON.stringify(responseData).substring(0, 250));
         return;
       }
 
@@ -655,7 +635,7 @@ function setupResponseMonitor() {
 
       lastResultKey = resultKey;
 
-      console.log("[LIVE RESULT DETECTED]", JSON.stringify(extracted));
+      console.log("[LIVE RESULT MATCHED]", JSON.stringify(extracted));
 
       await sendResultToBotBusiness(extracted);
     } catch (error) {
