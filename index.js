@@ -1,18 +1,18 @@
 const fs = require("fs");
-const path = require("path");
 const puppeteer = require("puppeteer");
-const express = require("express");
-const axios = require("axios");
 
-console.log(
-    "[DEBUG] Puppeteer version:",
-    require("puppeteer/package.json").version
-);
+const chromePath = puppeteer.executablePath();
 
-console.log(
-    "[DEBUG] Cache directory:",
-    process.env.PUPPETEER_CACHE_DIR || "default"
-);
+console.log("[DEBUG] Chrome path:", chromePath);
+console.log("[DEBUG] Chrome exists:", fs.existsSync(chromePath));
+console.log("[DEBUG] Cache directory:", process.env.PUPPETEER_CACHE_DIR);
+
+if (!fs.existsSync(chromePath)) {
+    console.error("[ERROR] Chrome file missing at runtime.");
+    console.error("[ERROR] Check build/runtime cache and deployment configuration.");
+} else {
+    console.log("[SUCCESS] Chrome executable found.");
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
