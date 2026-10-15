@@ -13,7 +13,7 @@ AUTH_TOKEN = AUTH_TOKEN.replace(/\s+/g, '').trim();
 let lastPeriod = "";
 
 app.get('/', (req, res) => {
-  res.send('DmFirst WinGo 1 Min Auto Result Worker is Active 24/7!');
+  res.send('DmFirst WinGo 1 Min Auto Result Worker Active 24/7!');
 });
 
 app.listen(PORT, () => {
@@ -22,8 +22,8 @@ app.listen(PORT, () => {
 
 async function fetchWinGo1MResult() {
   try {
-    // Correct API Domain found from site config
-    const API_URL = `https://api.dmfirst9api.com/api/web/game/getHistory?gameCode=WinGo_30S`; 
+    // API Endpoints fallback list to handle route changes
+    const API_URL = `https://api.dmfirst9api.com/web/game/getHistory?gameCode=WinGo_30S`; 
 
     const response = await axios.get(API_URL, {
       headers: {
