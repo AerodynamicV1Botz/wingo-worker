@@ -1,4 +1,4 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const express = require('express');
 const axios = require('axios');
 
@@ -23,8 +23,8 @@ let lastPeriod = "";
 async function startBot() {
     console.log("[STATUS] Launching Puppeteer Browser on Render...");
     
-    // Bina kisi custom executablePath ke, Puppeteer khud default installed chrome pakdega
     const browser = await puppeteer.launch({
+        executablePath: '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
         headless: "new",
         args: [
             '--no-sandbox',
