@@ -1,7 +1,7 @@
 /*
 =========================================================
  PROJECT : DmFirst WinGo 1M Worker
- PURPOSE : Final Table Row Scraper for WinGo 1M Game History
+ PURPOSE : Final Complete Code with Network API Interceptor
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
@@ -209,72 +209,55 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// Final Precise History Table Scraper
-// Robust Precise History Table Scraper
+// Network API Interceptor Scraper
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Precise History Table Scanner...");
+  console.log("[MONITOR] Starting Network API Interceptor...");
 
-  setInterval(async () => {
+  page.on("response", async (response) => {
     try {
-      if (!page || page.isClosed()) return;
+      const url = response.url();
+      if (!response.ok()) return;
 
-      const scannedData = await page.evaluate(() => {
-        // Page ka poora text ya saare visible items
-        const bodyText = document.body ? document.body.innerText : "";
-        
-        // 18-digit period number search karo (jaise 20261015...)
-        const pMatch = bodyText.match(/202[5-9]\d{12,16}/);
-        if (!pMatch) return { error: "Period not found in body text" };
+      if (url.includes("history") || url.includes("list") || url.includes("GetNoList") || url.includes("open") || url.includes("game")) {
+        let json;
+        try {
+          json = await response.json();
+        } catch (e) {
+          return;
+        }
 
-        const period = pMatch[0];
+        let list = null;
+        if (json && json.data) {
+          list = json.data.list || json.data.data || json.data;
+        } else if (json && json.list) {
+          list = json.list;
+        }
 
-        // Usi text block ya table cells se digits nikalna
-        const rows = Array.from(document.querySelectorAll('tr, [class*="row"], [class*="item"], [class*="list"]'));
-        for (let row of rows) {
-          const txt = (row.innerText || "").trim();
-          if (txt.includes(period)) {
-            const digits = txt.match(/\b[0-9]\b/g);
-            if (digits && digits.length > 0) {
-              const number = parseInt(digits[0]);
-              if (!isNaN(number) && number >= 0 && number <= 9) {
-                return { period, number };
-              }
+        if (Array.isArray(list) && list.length > 0) {
+          const item = list[0];
+          const period = item.issueNumber || item.issue || item.period || item.periodNumber || item.gameNo;
+          const num = item.number ?? item.result ?? item.openNumber ?? item.winNumber;
+
+          if (period && num !== undefined) {
+            const number = parseInt(num);
+            const key = String(period) + ":" + number;
+
+            if (key !== lastResultKey) {
+              lastResultKey = key;
+              const resultType = number >= 5 ? "BIG" : "SMALL";
+              console.log("[API CAPTURED SUCCESS]: Period:", period, "| Number:", number, "| Result:", resultType);
+
+              await sendResultToBotBusiness({
+                period: String(period),
+                number: number,
+                result: resultType
+              });
             }
           }
         }
-
-        // Fallback: Agar row element na mile toh body text se hi pehla number utha lo
-        const allDigits = bodyText.match(/\b[0-9]\b/g);
-        if (allDigits && allDigits.length > 0) {
-          const number = parseInt(allDigits[0]);
-          if (!isNaN(number) && number >= 0 && number <= 9) {
-            return { period, number };
-          }
-        }
-
-        return { error: "Period found but number row missing" };
-      });
-
-      if (scannedData.period && scannedData.number !== undefined) {
-        const key = scannedData.period + ":" + scannedData.number;
-        if (key !== lastResultKey) {
-          lastResultKey = key;
-          const resultType = scannedData.number >= 5 ? "BIG" : "SMALL";
-          console.log("[SCRAPED SUCCESS]:", scannedData.period, scannedData.number, resultType);
-
-          await sendResultToBotBusiness({
-            period: String(scannedData.period),
-            number: scannedData.number,
-            result: resultType
-          });
-        }
-      } else {
-        console.log("[SCAN STATUS]:", scannedData.error);
       }
-    } catch (err) {
-      console.error("[SCANNER ERROR]:", err.message);
-    }
-  }, 4000);
+    } catch (err) {}
+  });
 }
 
 function startKeepAlive() {
