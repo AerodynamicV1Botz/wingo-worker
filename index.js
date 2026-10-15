@@ -24,7 +24,8 @@ async function startBot() {
     console.log("[STATUS] Launching Puppeteer Browser on Render...");
     
     // Yahan se 'executablePath' hata diya hai taaki Puppeteer khud browser detect kar le
-    const browser = await puppeteer.launch({
+        const browser = await puppeteer.launch({
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
         headless: "new",
         args: [
             '--no-sandbox',
@@ -34,6 +35,7 @@ async function startBot() {
             '--disable-gpu'
         ]
     });
+
 
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
