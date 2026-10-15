@@ -1,7 +1,7 @@
 /*
 =========================================================
  PROJECT : DmFirst WinGo 1M Worker
- PURPOSE : Clean & Direct DOM Period/Number Scraper
+ PURPOSE : Final Code with Game History Tab Click & Shadow DOM Support
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
@@ -170,6 +170,18 @@ async function navigateToWinGo1M() {
   });
   await sleep(3000);
 
+  // Explicitly click on "Game history" tab to render the table
+  console.log("[NAVIGATION] Clicking 'Game history' tab to load history table...");
+  await page.evaluate(() => {
+    const elements = Array.from(document.querySelectorAll("div, span, p, a"));
+    const historyTab = elements.find((el) => {
+      const txt = (el.innerText || "").trim().toLowerCase();
+      return txt === "game history" || txt === "history";
+    });
+    if (historyTab) historyTab.click();
+  });
+  await sleep(2000);
+
   console.log("[NAVIGATION] Scrolling down to Game History Table...");
   await page.evaluate(() => {
     window.scrollBy(0, 400);
@@ -209,16 +221,15 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// Robust DOM & Iframe Scraper Loop
+// Final Deep DOM & Shadow DOM Scanner Loop
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Frame & DOM Scanner Loop...");
+  console.log("[MONITOR] Starting Deep DOM & Shadow DOM Scanner...");
 
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
 
       const scannedData = await page.evaluate(() => {
-        // Helper function to extract period & number from any text block
         const parseText = (text) => {
           const pMatch = text.match(/202[5-9]\d{10,14}/);
           if (!pMatch) return null;
@@ -233,12 +244,20 @@ function setupResponseMonitor() {
           return null;
         };
 
-        // 1. Check main document body
-        const mainText = document.body ? document.body.innerText : "";
-        let res = parseText(mainText);
+        // 1. Check Main Document Body
+        let res = parseText(document.body ? document.body.innerText : "");
         if (res) return res;
 
-        // 2. Check inside all iframes if main DOM fails
+        // 2. Check Shadow DOM roots if available
+        const allElements = document.querySelectorAll("*");
+        for (let el of allElements) {
+          if (el.shadowRoot) {
+            res = parseText(el.shadowRoot.textContent || "");
+            if (res) return res;
+          }
+        }
+
+        // 3. Check Iframes
         const frames = Array.from(document.querySelectorAll("iframe"));
         for (let frame of frames) {
           try {
@@ -250,7 +269,7 @@ function setupResponseMonitor() {
           } catch (e) {}
         }
 
-        return { error: "Period not found in DOM or Iframes" };
+        return { error: "Period not found anywhere" };
       });
 
       if (scannedData.period && scannedData.number !== undefined) {
