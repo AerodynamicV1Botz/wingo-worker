@@ -3,38 +3,36 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Environment Variables
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "AapkaSecretToken123";
-const AUTH_TOKEN = process.env.AUTH_TOKEN; // Clean Token from Render Environment
+let AUTH_TOKEN = process.env.AUTH_TOKEN || "";
 
-// Games Configuration (WinGo 1 Min & WinGo 3 Min)
+// Clean spaces/newlines from environment variable
+AUTH_TOKEN = AUTH_TOKEN.replace(/\s+/g, '').trim();
+
 const games = [
   { code: "WinGo_1M", name: "WinGo 1 Min", lastPeriod: "" },
   { code: "WinGo_3M", name: "WinGo 3 Min", lastPeriod: "" }
 ];
 
-// Basic Web Server to keep Render service Active 24/7
 app.get('/', (req, res) => {
-  res.send('DmFirst WinGo 1M & 3M Auto Result Worker is Active 24/7!');
+  res.send('DmFirst WinGo 1M & 3M Worker Active!');
 });
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server on port ${PORT}`);
 });
 
-// Function to fetch game results from DmFirst
 async function fetchGameResult(game) {
   try {
     const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=${game.code}`;
     
-    // Authorization Headers using AUTH_TOKEN
     const response = await axios.get(API_URL, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'application/json, text/plain, */*',
-        'Authorization': AUTH_TOKEN ? `Bearer ${AUTH_TOKEN.trim()}` : '',
-        'token': AUTH_TOKEN ? AUTH_TOKEN.trim() : ''
+        'Authorization': AUTH_TOKEN,
+        'token': AUTH_TOKEN
       }
     });
 
@@ -45,11 +43,8 @@ async function fetchGameResult(game) {
 
       if (period && period !== game.lastPeriod) {
         game.lastPeriod = period;
-
-        // Big / Small Calculation Logic (5-9 = WIN, 0-4 = LOSS)
         const resultType = (numberResult >= 5) ? "WIN" : "LOSS";
 
-        // Forwarding to BotBusiness Telegram Receiver Command
         if (BOT_TOKEN) {
           await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/runCommand`, {
             command: "/api_result_receiver",
@@ -64,14 +59,13 @@ async function fetchGameResult(game) {
         }
       }
     } else {
-      console.log(`[WARNING] [${game.name}] Unexpected response or Invalid Token.`);
+      console.log(`[WARNING] [${game.name}] Response format error or expired token.`);
     }
   } catch (error) {
-    console.error(`[ERROR] [${game.name}] Fetch Failed:`, error.message);
+    console.error(`[ERROR] [${game.name}] Request failed:`, error.message);
   }
 }
 
-// Continuous background monitoring loop every 10 seconds
 setInterval(() => {
   games.forEach(game => fetchGameResult(game));
 }, 10000);
