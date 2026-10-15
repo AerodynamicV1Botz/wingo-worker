@@ -560,15 +560,15 @@ function extractResult(responseData) {
 async function sendResultToBotBusiness(resultData) {
   try {
     const payload = {
-      command: "/api_result_receiver",
-      options: {
-        token: SECRET_TOKEN,
-        period: resultData.period,
-        number: resultData.number,
-        result: resultData.result,
-        platform: "DMFirst WinGo 1M"
-      }
-    };
+  command: "/api_result_receiver",
+  options: {
+    token: SECRET_TOKEN,
+    period: resultData.period,
+    number: resultData.number,
+    result: resultData.result,
+    platform: "DMFIRST GAME"  // Exact match with /wingo_channel_loop
+  }
+};
 
     console.log(
       "[API] Sending period:",
