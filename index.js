@@ -612,7 +612,7 @@ async function sendResultToBotBusiness(resultData) {
 }
 
 // =======================================================
-// SCRIPT 13 — NETWORK RESPONSE MONITOR
+// SCRIPT 13 — NETWORK RESPONSE MONITOR (UPDATED & ENHANCED)
 // =======================================================
 
 function setupResponseMonitor() {
@@ -622,60 +622,51 @@ function setupResponseMonitor() {
     try {
       const url = response.url();
 
-      if (
-        !url.includes("getHistory") &&
-        !url.includes("WinGo")
-      ) {
-        return;
-      }
+      // Broad matching for DmFirst WinGo game APIs
+      const isGameApi = 
+        url.includes("getHistory") || 
+        url.includes("WinGo") || 
+        url.includes("GetNoList") || 
+        url.includes("GetGame") ||
+        url.includes("lottery");
 
+      if (!isGameApi) return;
       if (!response.ok()) return;
 
-      const contentType =
-        response.headers()["content-type"] || "";
-
-      if (
-        !contentType.includes("json") &&
-        !url.includes("getHistory")
-      ) {
-        return;
-      }
-
       let responseData;
-
       try {
         responseData = await response.json();
       } catch (error) {
         return;
       }
 
+      // Console mein log karke dekhte hain ki kya API hitting ho rahi hai
+      console.log("[API DETECTED] URL:", url);
+
       const extracted = extractResult(responseData);
 
-      if (!extracted) return;
+      if (!extracted) {
+        console.log("[API DEBUG] JSON structure did not match extractor.");
+        return;
+      }
 
-      const resultKey =
-        extracted.period + ":" + extracted.number;
+      const resultKey = extracted.period + ":" + extracted.number;
 
       if (resultKey === lastResultKey) return;
 
       lastResultKey = resultKey;
 
-      console.log(
-        "[RESULT]",
-        JSON.stringify(extracted)
-      );
+      console.log("[LIVE RESULT DETECTED]", JSON.stringify(extracted));
 
       await sendResultToBotBusiness(extracted);
     } catch (error) {
-      console.error(
-        "[MONITOR] Processing error:",
-        error.message
-      );
+      console.error("[MONITOR] Processing error:", error.message);
     }
   });
 
   console.log("[MONITOR] Listener active.");
 }
+
 
 // =======================================================
 // SCRIPT 14 — KEEPALIVE
