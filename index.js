@@ -20,8 +20,8 @@ app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 10000;
 
-// Corrected BotBusiness API Endpoint
-const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.bots.business/v1/bots/3001907/runs";
+// Correct Bots.business Command Execution Endpoint
+const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.bots.business/v1/bots/3001907/commands/run";
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "wingo_secret_2026";
 const DEMO_USER = process.env.DEMO_USER || "922878117";
 const DEMO_PASS = process.env.DEMO_PASS || "Demo1432";
@@ -76,13 +76,12 @@ async function notifyAdminConnection() {
         message: "🟢 **RENDER WORKER CONNECTED!**\n\nDmFirst WinGo 1M scraper is active and linked with BotBusiness!"
       }
     };
-    await axios.post(BOTBUSINESS_API, payload, { timeout: 10000 });
-    console.log("[ADMIN NOTIFIED]: Connection alert sent to BotBusiness API.");
+    const res = await axios.post(BOTBUSINESS_API, payload, { timeout: 10000 });
+    console.log("[ADMIN NOTIFIED]: Alert sent to BotBusiness API. Status:", res.status);
   } catch (err) {
-    console.error("[NOTIFY ERROR]:", err.message);
+    console.error("[NOTIFY ERROR]:", err.response ? err.response.data : err.message);
   }
 }
-
 
 async function launchBrowser() {
   const executablePath = checkChrome();
@@ -217,7 +216,7 @@ async function sendResultToBotBusiness(resultData) {
     console.log("==================================================");
     return true;
   } catch (error) {
-    console.error("[FORWARD ERROR]:", error.message);
+    console.error("[FORWARD ERROR]:", error.response ? error.response.data : error.message);
     return false;
   }
 }
@@ -317,7 +316,6 @@ async function startWorker() {
     console.log("[WORKER] 24/7 Monitoring Active!");
     startKeepAlive();
 
-    // Admin ko successful connection ki notification bhejna
     await notifyAdminConnection();
   } catch (error) {
     workerStarted = false;
