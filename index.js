@@ -1,20 +1,40 @@
 const axios = require('axios');
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-// Environment Variables se variables read honge
+// Environment Variables
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "AapkaSecretToken123";
+const AUTH_TOKEN = process.env.AUTH_TOKEN; // Clean Token from Render Environment
 
-// DmFirst WinGo Public Result History Endpoint
-const API_URL = "https://www.dmfirst0.com/api/web/game/getHistory?gameCode=WinGo_30S";
+// Games Configuration (WinGo 1 Min & WinGo 3 Min)
+const games = [
+  { code: "WinGo_1M", name: "WinGo 1 Min", lastPeriod: "" },
+  { code: "WinGo_3M", name: "WinGo 3 Min", lastPeriod: "" }
+];
 
-var lastProcessedPeriod = "";
+// Basic Web Server to keep Render service Active 24/7
+app.get('/', (req, res) => {
+  res.send('DmFirst WinGo 1M & 3M Auto Result Worker is Active 24/7!');
+});
 
-async function fetchAndSendResult() {
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+// Function to fetch game results from DmFirst
+async function fetchGameResult(game) {
   try {
+    const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=${game.code}`;
+    
+    // Authorization Headers using AUTH_TOKEN
     const response = await axios.get(API_URL, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Authorization': AUTH_TOKEN ? `Bearer ${AUTH_TOKEN.trim()}` : '',
+        'token': AUTH_TOKEN ? AUTH_TOKEN.trim() : ''
       }
     });
 
@@ -23,31 +43,35 @@ async function fetchAndSendResult() {
       const period = latestGame.period || latestGame.issueNumber;
       const numberResult = parseInt(latestGame.number || latestGame.result);
 
-      // Agar new period ka result aaya hai tabhi process karo
-      if (period && period !== lastProcessedPeriod) {
-        lastProcessedPeriod = period;
+      if (period && period !== game.lastPeriod) {
+        game.lastPeriod = period;
 
-        // Big / Small Calculation (5-9 = BIG / WIN, 0-4 = SMALL)
-        var resultType = (numberResult >= 5) ? "WIN" : "LOSS";
+        // Big / Small Calculation Logic (5-9 = WIN, 0-4 = LOSS)
+        const resultType = (numberResult >= 5) ? "WIN" : "LOSS";
 
-        // Telegram BotBusiness Receiver Command par request bhejna
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/runCommand`, {
-          command: "/api_result_receiver",
-          options: {
-            token: SECRET_TOKEN,
-            period: String(period),
-            result: resultType,
-            platform: "DmFirst Game"
-          }
-        });
-
-        console.log(`[SUCCESS] Period: ${period} | Result: ${resultType}`);
+        // Forwarding to BotBusiness Telegram Receiver Command
+        if (BOT_TOKEN) {
+          await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/runCommand`, {
+            command: "/api_result_receiver",
+            options: {
+              token: SECRET_TOKEN,
+              period: String(period),
+              result: resultType,
+              platform: game.name
+            }
+          });
+          console.log(`[SUCCESS] [${game.name}] Period: ${period} | Result: ${resultType}`);
+        }
       }
+    } else {
+      console.log(`[WARNING] [${game.name}] Unexpected response or Invalid Token.`);
     }
   } catch (error) {
-    console.error("[ERROR] Result fetch fail:", error.message);
+    console.error(`[ERROR] [${game.name}] Fetch Failed:`, error.message);
   }
 }
 
-// WinGo 30S ke liye har 10-15 seconds me check chalega
-setInterval(fetchAndSendResult, 15000);
+// Continuous background monitoring loop every 10 seconds
+setInterval(() => {
+  games.forEach(game => fetchGameResult(game));
+}, 10000);
