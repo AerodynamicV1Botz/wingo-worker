@@ -214,33 +214,38 @@ async function sendResultToBotBusiness(resultData) {
 
 // 4. Accurate Table Row Scanner Loop
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Accurate Table Row Scanner...");
+  console.log("[MONITOR] Starting Debug Table Scanner...");
 
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
 
       const extracted = await page.evaluate(() => {
-        const rows = Array.from(document.querySelectorAll('.van-row, tr, div, span'));
+        const bodyText = document.body ? document.body.innerText : "";
+        const periodMatch = bodyText.match(/202[5-9]\d{10,14}/);
+        
+        if (!periodMatch) {
+          return { status: "No period found in page body" };
+        }
+
+        const period = periodMatch[0];
+        const rows = Array.from(document.querySelectorAll('tr, .van-row, div'));
         
         for (let row of rows) {
           const text = (row.innerText || "").trim();
-          const periodMatch = text.match(/202[5-9]\d{10,14}/);
-          if (periodMatch) {
-            const period = periodMatch[0];
+          if (text.includes(period)) {
             const digits = text.match(/\b[0-9]\b/g);
             if (digits && digits.length > 0) {
-              const number = parseInt(digits[0]);
-              if (!isNaN(number) && number >= 0 && number <= 9) {
-                return { period, number };
-              }
+              return { period, number: parseInt(digits[0]), status: "Found" };
             }
           }
         }
-        return null;
+        return { period, status: "Period found but no row match" };
       });
 
-      if (extracted && extracted.period && !isNaN(extracted.number)) {
+      console.log("[DEBUG SCANNER]:", JSON.stringify(extracted));
+
+      if (extracted && extracted.status === "Found") {
         const key = extracted.period + ":" + extracted.number;
         if (key !== lastResultKey) {
           lastResultKey = key;
@@ -259,6 +264,7 @@ function setupResponseMonitor() {
     }
   }, 3000);
 }
+
 
 function startKeepAlive() {
   if (keepAliveTimer) clearInterval(keepAliveTimer);
