@@ -41,7 +41,7 @@ const PORT = process.env.PORT || 10000;
 const BOTBUSINESS_API =
   "https://api.botbusiness.net/v1/bots/3001907/runs";
 
-// Replace these placeholders with your actual credentials.
+// Credentials & Token Configuration
 const SECRET_TOKEN = "wingo_secret_2026";
 const DEMO_USER = "922878117";
 const DEMO_PASS = "Demo1432";
@@ -173,7 +173,7 @@ async function launchBrowser() {
       "--disable-dev-shm-usage",
       "--disable-gpu",
       "--no-zygote",
-      "--single-process", // Render ke low RAM (512MB) ke liye sabse important
+      "--single-process",
       "--disable-software-rasterizer",
       "--disable-extensions",
       "--disable-background-networking",
@@ -465,7 +465,7 @@ async function openWinGoPage() {
 }
 
 // =======================================================
-// SCRIPT 11 — EXTRACT RESULT (ENHANCED FIELD EXTRACTOR)
+// SCRIPT 11 — EXTRACT RESULT
 // =======================================================
 
 function extractResult(responseData) {
@@ -490,7 +490,6 @@ function extractResult(responseData) {
   }
 
   const item = list[0];
-
   if (!item || typeof item !== "object") {
     return null;
   }
@@ -501,34 +500,20 @@ function extractResult(responseData) {
     item.period ??
     item.periodNumber ??
     item.drawNumber ??
-    item.gameNo ??
-    item.issuecode;
+    item.gameNo;
 
   const rawNumber =
     item.number ??
     item.result ??
     item.openNumber ??
     item.winNumber ??
-    item.winNum ??
-    item.ball;
+    item.winNum;
 
   if (period === undefined || period === null || rawNumber === undefined || rawNumber === null) {
     return null;
   }
 
-  let number;
-
-  if (typeof rawNumber === "number") {
-    number = rawNumber;
-  } else {
-    const cleaned = String(rawNumber).trim();
-
-    if (!/^\d+$/.test(cleaned)) {
-      return null;
-    }
-
-    number = Number(cleaned);
-  }
+  let number = Number(String(rawNumber).trim());
 
   if (!Number.isFinite(number) || number < 0 || number > 9) {
     return null;
@@ -542,7 +527,7 @@ function extractResult(responseData) {
 }
 
 // =======================================================
-// SCRIPT 12 — FORWARD RESULT TO BOT BUSINESS (WITH API LOGS)
+// SCRIPT 12 — FORWARD RESULT TO BOT BUSINESS
 // =======================================================
 
 async function sendResultToBotBusiness(resultData) {
@@ -582,13 +567,45 @@ async function sendResultToBotBusiness(resultData) {
 }
 
 // =======================================================
-// SCRIPT 13 — ENHANCED DOM & TEXT SCRAPER (WITH DEBUG LOGS)
+// SCRIPT 13 — ENHANCED DOM & TEXT SCRAPER (AUTOMATIC POLLING)
 // =======================================================
 
 function setupResponseMonitor() {
-  console.log("[MONITOR] Activating Enhanced DOM Scraper...");
+  console.log("[MONITOR] Activating Response Monitor & Scraper...");
 
-  // Har 5 second mein page ke saare text ko scan karega
+  // 1. Network Listener for Standard API JSON Interception
+  page.on("response", async (response) => {
+    try {
+      const url = response.url();
+      const isGameApi = 
+        url.includes("getHistory") || 
+        url.includes("WinGo") || 
+        url.includes("GetNoList") || 
+        url.includes("GetGame") ||
+        url.includes("lottery");
+
+      if (!isGameApi || !response.ok()) return;
+
+      let responseData;
+      try {
+        responseData = await response.json();
+      } catch (err) {
+        return;
+      }
+
+      const extracted = extractResult(responseData);
+      if (!extracted) return;
+
+      const resultKey = extracted.period + ":" + extracted.number;
+      if (resultKey === lastResultKey) return;
+
+      lastResultKey = resultKey;
+      console.log("[NETWORK API RESULT INTERCEPTED]:", JSON.stringify(extracted));
+      await sendResultToBotBusiness(extracted);
+    } catch (e) {}
+  });
+
+  // 2. Continuous DOM Scraper Fallback (Every 5 seconds)
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
@@ -596,30 +613,24 @@ function setupResponseMonitor() {
       const extracted = await page.evaluate(() => {
         const allText = document.body ? document.body.innerText : "";
         
-        // 14 ya 15 digit ka period dhoondho (jaise 20261015...)
+        // Match 14-15 digit WinGo period (e.g. 20261015100010470)
         const periodMatch = allText.match(/202[5-9]\d{10,14}/);
-        if (!periodMatch) return { status: "No Period Found" };
+        if (!periodMatch) return null;
 
         const period = periodMatch[0];
-
-        // Uske aas-pass ke digits me se winning number (0-9) dhoondho
         const numbersMatch = allText.match(/\b[0-9]\b/g);
-        if (!numbersMatch || numbersMatch.length === 0) {
-          return { period, status: "Period found but no numbers" };
-        }
+
+        if (!numbersMatch || numbersMatch.length === 0) return null;
 
         const number = parseInt(numbersMatch[numbersMatch.length - 1]);
 
         return {
           period: period,
-          number: number,
-          status: "Success"
+          number: number
         };
       });
 
-      if (extracted.status !== "Success") {
-        return;
-      }
+      if (!extracted) return;
 
       const resultKey = extracted.period + ":" + extracted.number;
       if (resultKey === lastResultKey) return;
@@ -632,18 +643,16 @@ function setupResponseMonitor() {
         result: extracted.number >= 5 ? "BIG" : "SMALL"
       };
 
-      console.log("[LIVE RESULT FOUND ON SCREEN]:", JSON.stringify(finalData));
-
+      console.log("[DOM LIVE RESULT FOUND ON SCREEN]:", JSON.stringify(finalData));
       await sendResultToBotBusiness(finalData);
 
     } catch (err) {
-      console.error("[MONITOR SCRAPER ERROR]:", err.message);
+      console.error("[SCRAPER LOOP ERROR]:", err.message);
     }
   }, 5000);
 
-  console.log("[MONITOR] Enhanced Scraper loop active.");
+  console.log("[MONITOR] Setup completed and active.");
 }
-
 
 // =======================================================
 // SCRIPT 14 — KEEPALIVE
