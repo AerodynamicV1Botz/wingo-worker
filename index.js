@@ -214,57 +214,83 @@ async function sendResultToBotBusiness(resultData) {
 
 // 4. Accurate Table Row Scanner Loop
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Debug Table Scanner...");
+function setupResponseMonitor() {
+  console.log("[MONITOR] Starting Full Network & HTML Inspector...");
 
+  // 1. Network API Interceptor (Sabse powerful tarika API data pakadne ka)
+  page.on("response", async (response) => {
+    try {
+      const url = response.url();
+      if (!response.ok()) return;
+
+      if (url.includes("GetNoList") || url.includes("getHistory") || url.includes("WinGo") || url.includes("history") || url.includes("game")) {
+        let json;
+        try { json = await response.json(); } catch (e) { return; }
+
+        console.log("[NETWORK API HIT DETECTED]:", url);
+        
+        let list = (json && json.data) ? (json.data.list || json.data) : (json ? json.list : null);
+        if (Array.isArray(list) && list.length > 0) {
+          const item = list[0];
+          const period = item.issueNumber || item.issue || item.period || item.periodNumber || item.gameNo;
+          const num = item.number ?? item.result ?? item.openNumber ?? item.winNumber;
+
+          if (period && num !== undefined) {
+            const number = parseInt(num);
+            const key = period + ":" + number;
+            if (key !== lastResultKey) {
+              lastResultKey = key;
+              const resultType = number >= 5 ? "BIG" : "SMALL";
+              console.log("[NETWORK RESULT CAPTURED]:", period, number, resultType);
+
+              await sendResultToBotBusiness({
+                period: String(period),
+                number: number,
+                result: resultType
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {}
+  });
+
+  // 2. Fallback HTML InnerText Inspector
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
 
-      const extracted = await page.evaluate(() => {
-        const bodyText = document.body ? document.body.innerText : "";
-        const periodMatch = bodyText.match(/202[5-9]\d{10,14}/);
-        
-        if (!periodMatch) {
-          return { status: "No period found in page body" };
-        }
-
-        const period = periodMatch[0];
-        const rows = Array.from(document.querySelectorAll('tr, .van-row, div'));
-        
-        for (let row of rows) {
-          const text = (row.innerText || "").trim();
-          if (text.includes(period)) {
-            const digits = text.match(/\b[0-9]\b/g);
-            if (digits && digits.length > 0) {
-              return { period, number: parseInt(digits[0]), status: "Found" };
-            }
-          }
-        }
-        return { period, status: "Period found but no row match" };
+      const pageText = await page.evaluate(() => {
+        return document.documentElement ? document.documentElement.innerText : "";
       });
 
-      console.log("[DEBUG SCANNER]:", JSON.stringify(extracted));
+      // Agar page par koi bhi 14 ya 15 digit ka number dikhe
+      const periodMatch = pageText.match(/202[5-9]\d{10,14}/);
+      if (periodMatch) {
+        const period = periodMatch[0];
+        const digits = pageText.match(/\b[0-9]\b/g);
+        if (digits && digits.length > 0) {
+          const number = parseInt(digits[digits.length - 1]);
+          const key = period + ":" + number;
+          
+          if (key !== lastResultKey) {
+            lastResultKey = key;
+            const resultType = number >= 5 ? "BIG" : "SMALL";
+            console.log("[HTML SCRAPED SUCCESS]:", period, number, resultType);
 
-      if (extracted && extracted.status === "Found") {
-        const key = extracted.period + ":" + extracted.number;
-        if (key !== lastResultKey) {
-          lastResultKey = key;
-          const resultType = extracted.number >= 5 ? "BIG" : "SMALL";
-          console.log("[SCRAPED SUCCESS]:", extracted.period, extracted.number, resultType);
-
-          await sendResultToBotBusiness({
-            period: String(extracted.period),
-            number: extracted.number,
-            result: resultType
-          });
+            await sendResultToBotBusiness({
+              period: String(period),
+              number: number,
+              result: resultType
+            });
+          }
         }
       }
     } catch (err) {
-      console.error("[SCANNER ERROR]:", err.message);
+      console.error("[INSPECTOR ERROR]:", err.message);
     }
-  }, 3000);
+  }, 4000);
 }
-
 
 function startKeepAlive() {
   if (keepAliveTimer) clearInterval(keepAliveTimer);
