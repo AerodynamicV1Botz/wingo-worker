@@ -1,19 +1,47 @@
 const fs = require("fs");
+const path = require("path");
 const puppeteer = require("puppeteer");
-const express = require("express");
-const axios = require("axios");
 
-console.log("[DEBUG] Puppeteer version:",
-    require("puppeteer/package.json").version);
+const cacheDir =
+    process.env.PUPPETEER_CACHE_DIR ||
+    path.join(require("os").homedir(), ".cache", "puppeteer");
 
-console.log("[DEBUG] Chrome path:",
-    puppeteer.executablePath());
+console.log("[DEBUG] Cache directory:", cacheDir);
 
-console.log("[DEBUG] Cache directory:",
-    process.env.PUPPETEER_CACHE_DIR || "default");
+function inspectDirectory(dir, depth = 0) {
+    if (depth > 5) return;
 
-console.log("[DEBUG] Chrome exists:",
-    fs.existsSync(puppeteer.executablePath()));
+    try {
+        if (!fs.existsSync(dir)) {
+            console.log("[MISSING]", dir);
+            return;
+        }
+
+        const entries = fs.readdirSync(dir, {
+            withFileTypes: true
+        });
+
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+
+            if (entry.isDirectory()) {
+                console.log("[DIR]", fullPath);
+                inspectDirectory(fullPath, depth + 1);
+            } else if (
+                entry.name === "chrome" ||
+                entry.name.startsWith("chrome")
+            ) {
+                console.log("[FILE]", fullPath);
+            }
+        }
+    } catch (error) {
+        console.log("[INSPECT ERROR]", error.message);
+    }
+}
+
+console.log("[DEBUG] Expected executable:", puppeteer.executablePath());
+
+inspectDirectory(cacheDir);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
