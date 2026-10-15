@@ -20,7 +20,8 @@ app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 10000;
 
-const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.botbusiness.net/v1/bots/3001907/runs";
+// Corrected BotBusiness API Endpoint
+const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.bots.business/v1/bots/3001907/runs";
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "wingo_secret_2026";
 const DEMO_USER = process.env.DEMO_USER || "922878117";
 const DEMO_PASS = process.env.DEMO_PASS || "Demo1432";
@@ -72,15 +73,16 @@ async function notifyAdminConnection() {
       options: {
         token: SECRET_TOKEN,
         admin_id: ADMIN_ID,
-        message: "🟢 **RENDER WORKER CONNECTED!**\n\nDmFirst WinGo 1M scraper is now live and successfully linked with BotBusiness 24/7!"
+        message: "🟢 **RENDER WORKER CONNECTED!**\n\nDmFirst WinGo 1M scraper is active and linked with BotBusiness!"
       }
     };
     await axios.post(BOTBUSINESS_API, payload, { timeout: 10000 });
-    console.log("[ADMIN NOTIFIED]: Connection alert sent to admin.");
+    console.log("[ADMIN NOTIFIED]: Connection alert sent to BotBusiness API.");
   } catch (err) {
     console.error("[NOTIFY ERROR]:", err.message);
   }
 }
+
 
 async function launchBrowser() {
   const executablePath = checkChrome();
