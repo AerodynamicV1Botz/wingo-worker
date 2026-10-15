@@ -209,39 +209,48 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// Robust Direct DOM Scraper
+// Robust DOM & Iframe Scraper Loop
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Direct DOM Scanner Loop...");
+  console.log("[MONITOR] Starting Frame & DOM Scanner Loop...");
 
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
 
       const scannedData = await page.evaluate(() => {
-        // Poore page ka text uthao
-        const bodyText = document.body ? document.body.innerText : "";
-        
-        // 14-digit period match karo (jaise 20261015...)
-        const pMatch = bodyText.match(/202[5-9]\d{10,14}/);
-        if (!pMatch) return { error: "Period not found in DOM" };
-
-        const period = pMatch[0];
-
-        // Table ya rows se numbers dhoondo
-        const elements = Array.from(document.querySelectorAll('tr, .van-row, div, span'));
-        for (let el of elements) {
-          const txt = el.innerText || "";
-          if (txt.includes(period)) {
-            const digits = txt.match(/\b[0-9]\b/g);
-            if (digits && digits.length > 0) {
-              const number = parseInt(digits[0]);
-              if (!isNaN(number) && number >= 0 && number <= 9) {
-                return { period, number };
-              }
+        // Helper function to extract period & number from any text block
+        const parseText = (text) => {
+          const pMatch = text.match(/202[5-9]\d{10,14}/);
+          if (!pMatch) return null;
+          const period = pMatch[0];
+          const digits = text.match(/\b[0-9]\b/g);
+          if (digits && digits.length > 0) {
+            const number = parseInt(digits[0]);
+            if (!isNaN(number) && number >= 0 && number <= 9) {
+              return { period, number };
             }
           }
+          return null;
+        };
+
+        // 1. Check main document body
+        const mainText = document.body ? document.body.innerText : "";
+        let res = parseText(mainText);
+        if (res) return res;
+
+        // 2. Check inside all iframes if main DOM fails
+        const frames = Array.from(document.querySelectorAll("iframe"));
+        for (let frame of frames) {
+          try {
+            const frameDoc = frame.contentDocument || frame.contentWindow.document;
+            if (frameDoc && frameDoc.body) {
+              res = parseText(frameDoc.body.innerText);
+              if (res) return res;
+            }
+          } catch (e) {}
         }
-        return { error: "Period found but row number missing" };
+
+        return { error: "Period not found in DOM or Iframes" };
       });
 
       if (scannedData.period && scannedData.number !== undefined) {
@@ -258,10 +267,10 @@ function setupResponseMonitor() {
           });
         }
       } else {
-        console.log("[DOM SCAN STATUS]:", scannedData.error);
+        console.log("[SCAN STATUS]:", scannedData.error);
       }
     } catch (err) {
-      console.error("[DOM SCANNER ERROR]:", err.message);
+      console.error("[SCANNER ERROR]:", err.message);
     }
   }, 4000);
 }
