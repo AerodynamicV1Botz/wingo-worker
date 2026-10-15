@@ -22,14 +22,15 @@ app.listen(PORT, () => {
 
 async function fetchWinGo1MResult() {
   try {
-    // WinGo 1 Min direct API endpoint
-    const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=WinGo_30S`; 
+    // Correct API Domain found from site config
+    const API_URL = `https://api.dmfirst9api.com/api/web/game/getHistory?gameCode=WinGo_30S`; 
 
     const response = await axios.get(API_URL, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
         'Referer': 'https://www.dmfirst0.com/',
+        'Origin': 'https://www.dmfirst0.com',
         'Authorization': AUTH_TOKEN.startsWith('Bearer') ? AUTH_TOKEN : `Bearer ${AUTH_TOKEN}`,
         'token': AUTH_TOKEN
       }
