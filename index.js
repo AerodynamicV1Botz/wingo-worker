@@ -1,6 +1,6 @@
 /*
 =========================================================
- PROJECT : DmFirst WinGo 1M Worker (Final Production)
+ PROJECT : DmFirst WinGo 1M Worker (Raw Result Forwarder)
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
@@ -20,12 +20,11 @@ app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 10000;
 
-// Correct Bots.business Command Execution Endpoint
+// BotBusiness API Endpoint & Token Configuration
 const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.bots.business/v1/bots/3001907/commands/run";
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "wingo_secret_2026";
 const DEMO_USER = process.env.DEMO_USER || "922878117";
 const DEMO_PASS = process.env.DEMO_PASS || "Demo1432";
-const ADMIN_ID = "7897324623";
 const LOGIN_URL = "https://www.dmfirst0.com/#/login";
 
 let browser = null;
@@ -64,23 +63,6 @@ function checkChrome() {
     throw new Error("Chrome executable missing.");
   }
   return executablePath;
-}
-
-async function notifyAdminConnection() {
-  try {
-    const payload = {
-      command: "/api_admin_notifier",
-      options: {
-        token: SECRET_TOKEN,
-        admin_id: ADMIN_ID,
-        message: "🟢 **RENDER WORKER CONNECTED!**\n\nDmFirst WinGo 1M scraper is active and linked with BotBusiness!"
-      }
-    };
-    const res = await axios.post(BOTBUSINESS_API, payload, { timeout: 10000 });
-    console.log("[ADMIN NOTIFIED]: Alert sent to BotBusiness API. Status:", res.status);
-  } catch (err) {
-    console.error("[NOTIFY ERROR]:", err.response ? err.response.data : err.message);
-  }
 }
 
 async function launchBrowser() {
@@ -191,7 +173,8 @@ async function navigateToWinGo1M() {
   console.log("[NAVIGATION] Navigation complete! Active on WinGo Game Page.");
 }
 
-async function sendResultToBotBusiness(resultData) {
+// Raw Data Forwarder to BotBusiness Receiver Command
+async function forwardRawResultToBot(resultData) {
   try {
     const payload = {
       command: "/api_result_receiver",
@@ -205,7 +188,7 @@ async function sendResultToBotBusiness(resultData) {
     };
 
     console.log("==================================================");
-    console.log("[LIVE FORWARD] Period:", resultData.period, "| Number:", resultData.number, "| Result:", resultData.result);
+    console.log("[RAW FORWARD] Period:", resultData.period, "| Number:", resultData.number, "| Result:", resultData.result);
     
     const response = await axios.post(BOTBUSINESS_API, payload, {
       timeout: 15000,
@@ -244,8 +227,8 @@ function setupResponseMonitor() {
               if (key !== lastResultKey) {
                 lastResultKey = key;
                 const resultType = number >= 5 ? "BIG" : "SMALL";
-                console.log("[WEBSOCKET SUCCESS]:", period, number, resultType);
-                await sendResultToBotBusiness({ period: String(period), number, result: resultType });
+                console.log("[WEBSOCKET CAPTURED]:", period, number, resultType);
+                await forwardRawResultToBot({ period: String(period), number, result: resultType });
               }
             }
           }
@@ -282,8 +265,8 @@ function setupResponseMonitor() {
         if (key !== lastResultKey) {
           lastResultKey = key;
           const resultType = rowData.number >= 5 ? "BIG" : "SMALL";
-          console.log("[DOM TABLE SUCCESS]:", rowData.period, rowData.number, resultType);
-          await sendResultToBotBusiness({ period: String(rowData.period), number: rowData.number, result: resultType });
+          console.log("[DOM TABLE CAPTURED]:", rowData.period, rowData.number, resultType);
+          await forwardRawResultToBot({ period: String(rowData.period), number: rowData.number, result: resultType });
         }
       }
     } catch (err) {}
@@ -315,8 +298,6 @@ async function startWorker() {
     workerStarted = true;
     console.log("[WORKER] 24/7 Monitoring Active!");
     startKeepAlive();
-
-    await notifyAdminConnection();
   } catch (error) {
     workerStarted = false;
     console.error("[WORKER CRASHED]:", error.message);
