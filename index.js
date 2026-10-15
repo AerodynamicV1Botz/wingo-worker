@@ -1,26 +1,15 @@
 /*
 =========================================================
  PROJECT : DmFirst WinGo 1M Worker
- PURPOSE : Login, monitor WinGo results and forward them
+ PURPOSE : Step-by-step navigation, popup handler & history scraper
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
 
-// =======================================================
-// SCRIPT 01 — ENVIRONMENT & MODULES
-// =======================================================
-
 const fs = require("fs");
 const path = require("path");
 
-// Keep Chrome cache inside the project directory.
-// Render build must install Chrome in this same directory.
-const CACHE_DIR = path.join(
-  __dirname,
-  ".cache",
-  "puppeteer"
-);
-
+const CACHE_DIR = path.join(__dirname, ".cache", "puppeteer");
 process.env.PUPPETEER_CACHE_DIR = CACHE_DIR;
 
 const puppeteer = require("puppeteer");
@@ -28,140 +17,56 @@ const express = require("express");
 const axios = require("axios");
 
 const app = express();
-
 app.use(express.json({ limit: "1mb" }));
 
-// =======================================================
-// SCRIPT 02 — CONFIGURATION
-// =======================================================
-
 const PORT = process.env.PORT || 10000;
+const BOTBUSINESS_API = "https://api.botbusiness.net/v1/bots/3001907/runs";
 
-// API endpoint supplied by the user.
-const BOTBUSINESS_API =
-  "https://api.botbusiness.net/v1/bots/3001907/runs";
-
-// Credentials & Token Configuration
 const SECRET_TOKEN = "wingo_secret_2026";
 const DEMO_USER = "922878117";
 const DEMO_PASS = "Demo1432";
-
 const LOGIN_URL = "https://www.dmfirst0.com/#/login";
 
 let browser = null;
 let page = null;
-
 let workerStarting = false;
 let workerStarted = false;
 let lastResultKey = "";
-
 let keepAliveTimer = null;
 
-const sleep = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-// =======================================================
-// SCRIPT 03 — HEALTH CHECK
-// =======================================================
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 app.get("/", (req, res) => {
-  res.status(200).send(
-    "DmFirst WinGo 1M Worker Active 24/7!"
-  );
+  res.status(200).send("DmFirst WinGo 1M Worker Active 24/7!");
 });
 
 app.get("/health", (req, res) => {
   res.status(200).json({
     status: "ok",
     worker: "DmFirst WinGo 1M",
-    browserConnected: Boolean(
-      browser && browser.isConnected()
-    ),
-    pageAvailable: Boolean(
-      page && !page.isClosed()
-    ),
+    browserConnected: Boolean(browser && browser.isConnected()),
+    pageAvailable: Boolean(page && !page.isClosed()),
     workerStarted,
     time: new Date().toISOString()
   });
 });
 
-// =======================================================
-// SCRIPT 04 — CONFIGURATION VALIDATION
-// =======================================================
-
 function validateConfiguration() {
-  const missing = [];
-
-  if (
-    !SECRET_TOKEN ||
-    SECRET_TOKEN === "PASTE_YOUR_SECRET_TOKEN_HERE"
-  ) {
-    missing.push("SECRET_TOKEN");
-  }
-
-  if (
-    !DEMO_USER ||
-    DEMO_USER === "PASTE_YOUR_DEMO_USERNAME_HERE"
-  ) {
-    missing.push("DEMO_USER");
-  }
-
-  if (
-    !DEMO_PASS ||
-    DEMO_PASS === "PASTE_YOUR_DEMO_PASSWORD_HERE"
-  ) {
-    missing.push("DEMO_PASS");
-  }
-
-  if (missing.length > 0) {
-    throw new Error(
-      "Please configure these values inside index.js: " +
-      missing.join(", ")
-    );
+  if (!SECRET_TOKEN || !DEMO_USER || !DEMO_PASS) {
+    throw new Error("Missing configuration settings.");
   }
 }
-
-// =======================================================
-// SCRIPT 05 — CHROME DIAGNOSTICS
-// =======================================================
 
 function checkChrome() {
   const executablePath = puppeteer.executablePath();
-
-  console.log("======================================");
-  console.log("[DEBUG] Node version:", process.version);
-  console.log("[DEBUG] Cache directory:", CACHE_DIR);
-  console.log("[DEBUG] Chrome executable:", executablePath);
-
-  console.log(
-    "[DEBUG] Cache directory exists:",
-    fs.existsSync(CACHE_DIR)
-  );
-
-  console.log(
-    "[DEBUG] Chrome executable exists:",
-    fs.existsSync(executablePath)
-  );
-
-  console.log("======================================");
-
   if (!fs.existsSync(executablePath)) {
-    throw new Error(
-      "Chrome executable missing. Ensure Render installs " +
-      "Puppeteer Chrome into the project-local cache."
-    );
+    throw new Error("Chrome executable missing.");
   }
-
   return executablePath;
 }
 
-// =======================================================
-// SCRIPT 06 — BROWSER LAUNCH
-// =======================================================
-
 async function launchBrowser() {
   const executablePath = checkChrome();
-
   console.log("[BROWSER] Launching Chrome...");
 
   browser = await puppeteer.launch({
@@ -174,362 +79,117 @@ async function launchBrowser() {
       "--disable-gpu",
       "--no-zygote",
       "--single-process",
-      "--disable-software-rasterizer",
-      "--disable-extensions",
-      "--disable-background-networking",
-      "--disable-background-timer-throttling",
-      "--disable-renderer-backgrounding",
-      "--disable-features=Translate,BackForwardCache"
+      "--disable-software-rasterizer"
     ],
     timeout: 60000
   });
 
-  browser.on("disconnected", () => {
-    console.error("[BROWSER] Browser disconnected.");
-
-    workerStarted = false;
-    page = null;
-  });
-
   page = await browser.newPage();
-
-  await page.setViewport({
-    width: 1365,
-    height: 768
-  });
-
+  await page.setViewport({ width: 375, height: 812, isMobile: true }); // Mobile Viewport
   page.setDefaultNavigationTimeout(60000);
   page.setDefaultTimeout(30000);
 
-  console.log("[BROWSER] Chrome launched successfully.");
-
+  console.log("[BROWSER] Chrome launched in Mobile View.");
   return page;
 }
 
-// =======================================================
-// SCRIPT 07 — OPEN LOGIN PAGE
-// =======================================================
-
-async function openLoginPage() {
-  console.log("[LOGIN] Opening:", LOGIN_URL);
-
-  await page.goto(LOGIN_URL, {
-    waitUntil: "domcontentloaded",
-    timeout: 60000
-  });
-
-  await sleep(5000);
-
-  console.log("[LOGIN] Website loaded.");
-}
-
-// =======================================================
-// SCRIPT 08 — LOGIN FORM
-// =======================================================
-
-async function loginToWebsite() {
-  console.log("[LOGIN] Searching for login fields...");
-
-  const inputDetails = await page.evaluate(() => {
-    return Array.from(
-      document.querySelectorAll("input")
-    ).map((input) => ({
-      type: (input.type || "").toLowerCase(),
-      placeholder: input.placeholder || "",
-      name: input.name || "",
-      visible:
-        input.offsetWidth > 0 &&
-        input.offsetHeight > 0
-    }));
-  });
-
-  console.log(
-    "[LOGIN] Input fields:",
-    JSON.stringify(inputDetails)
-  );
-
-  const usernameSelectors = [
-    'input[placeholder*="Username" i]',
-    'input[placeholder*="Account" i]',
-    'input[placeholder*="Mobile" i]',
-    'input[placeholder*="User" i]',
-    'input[name="username"]',
-    'input[name="account"]',
-    'input[type="text"]',
-    'input:not([type])'
-  ];
-
-  const passwordSelectors = [
-    'input[type="password"]',
-    'input[placeholder*="Password" i]',
-    'input[name="password"]'
-  ];
-
-  async function findVisibleInput(selectors) {
-    for (const selector of selectors) {
-      const elements = await page.$$(selector);
-
-      for (const element of elements) {
-        const visible = await element
-          .isIntersectingViewport()
-          .catch(() => false);
-
-        if (visible) {
-          return element;
+// 1. Dismiss multiple popups (Confirm buttons)
+async function clearAllPopups() {
+  console.log("[POPUP] Checking for warning/announcement popups...");
+  for (let i = 0; i < 4; i++) {
+    try {
+      const clicked = await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button, .van-button, div, span"));
+        const target = btns.find((b) => {
+          const txt = (b.innerText || b.textContent || "").trim().toLowerCase();
+          return txt === "confirm" || txt === "close" || txt === "ok";
+        });
+        if (target && target.offsetWidth > 0) {
+          target.click();
+          return true;
         }
+        return false;
+      });
+      if (clicked) {
+        console.log(`[POPUP] Dismissed popup ${i + 1}`);
+        await sleep(1500);
       }
-    }
-
-    return null;
-  }
-
-  const usernameInput =
-    await findVisibleInput(usernameSelectors);
-
-  const passwordInput =
-    await findVisibleInput(passwordSelectors);
-
-  if (!usernameInput || !passwordInput) {
-    throw new Error(
-      "Login fields not found. Website selectors may have changed."
-    );
-  }
-
-  await usernameInput.click();
-  await usernameInput.type(String(DEMO_USER), {
-    delay: 30
-  });
-
-  await passwordInput.click();
-  await passwordInput.type(String(DEMO_PASS), {
-    delay: 30
-  });
-
-  console.log("[LOGIN] Credentials entered.");
-
-  const loginButtonClicked = await page.evaluate(() => {
-    const elements = Array.from(
-      document.querySelectorAll(
-        'button, input[type="submit"], [role="button"]'
-      )
-    );
-
-    const target = elements.find((element) => {
-      const text = (
-        element.innerText ||
-        element.value ||
-        element.textContent ||
-        ""
-      ).trim().toLowerCase();
-
-      const visible =
-        element.offsetWidth > 0 &&
-        element.offsetHeight > 0;
-
-      return (
-        visible &&
-        (
-          text === "login" ||
-          text === "log in" ||
-          text === "sign in" ||
-          text === "เข้าสู่ระบบ" ||
-          text.includes("login")
-        )
-      );
-    });
-
-    if (!target) return false;
-
-    target.click();
-    return true;
-  });
-
-  if (!loginButtonClicked) {
-    throw new Error(
-      "Login button not found. Website selectors may have changed."
-    );
-  }
-
-  console.log("[LOGIN] Login button clicked.");
-
-  await sleep(7000);
-
-  await dismissConfirmPopup();
-}
-
-// =======================================================
-// SCRIPT 09 — DISMISS CONFIRM POPUP
-// =======================================================
-
-async function dismissConfirmPopup() {
-  try {
-    const clicked = await page.evaluate(() => {
-      const elements = Array.from(
-        document.querySelectorAll(
-          "button, [role='button'], .van-button, .el-button"
-        )
-      );
-
-      const target = elements.find((element) => {
-        const text = (
-          element.innerText ||
-          element.textContent ||
-          ""
-        ).trim().toLowerCase();
-
-        const visible =
-          element.offsetWidth > 0 &&
-          element.offsetHeight > 0;
-
-        return (
-          visible &&
-          ["confirm", "ok", "close"].includes(text)
-        );
-      });
-
-      if (!target) return false;
-
-      target.click();
-      return true;
-    });
-
-    if (clicked) {
-      console.log("[POPUP] Confirm popup dismissed.");
-      await sleep(2000);
-    } else {
-      console.log("[POPUP] No Confirm popup detected.");
-    }
-  } catch (error) {
-    console.log("[POPUP] Check failed:", error.message);
+    } catch (e) {}
   }
 }
 
-// =======================================================
-// SCRIPT 10 — OPEN LOTTERY / WINGO 1M (EXACT URL INTEGRATED)
-// =======================================================
+// 2. Step-by-Step UI Navigation
+async function navigateToWinGo1M() {
+  console.log("[NAVIGATION] Starting step-by-step navigation...");
 
-async function openWinGoPage() {
-  const WINGO_DIRECT_URL = "https://www.dmfirst0.com/#/saasLottery/WinGo?gameCode=WinGo_1M&lottery=WinGo";
-  
-  console.log("[GAME] Navigating directly to WinGo 1M Page...");
-  console.log("[GAME] URL:", WINGO_DIRECT_URL);
+  // Open Login Page
+  await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await sleep(4000);
 
-  try {
-    await page.goto(WINGO_DIRECT_URL, {
-      waitUntil: "domcontentloaded",
-      timeout: 60000
-    });
-    
-    console.log("[GAME] Direct URL loaded successfully.");
-    await sleep(5000);
-  } catch (err) {
-    console.error("[GAME] Direct URL navigation failed:", err.message);
+  // Fill Login
+  console.log("[LOGIN] Entering phone & password...");
+  const inputs = await page.$$("input");
+  if (inputs.length >= 2) {
+    await inputs[0].type(String(DEMO_USER), { delay: 30 });
+    await inputs[1].type(String(DEMO_PASS), { delay: 30 });
   }
 
-  // Backup selector: Click 1M tab in case page loads on default tab
-  try {
-    const clicked = await page.evaluate(() => {
-      const elements = Array.from(
-        document.querySelectorAll("button, div, span, p, a, li")
-      );
+  await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll('button, [role="button"], input[type="submit"]'));
+    const target = btns.find((b) => (b.innerText || "").toLowerCase().includes("login"));
+    if (target) target.click();
+  });
 
-      const target = elements.find((element) => {
-        const text = (
-          element.innerText ||
-          element.textContent ||
-          ""
-        ).trim().toLowerCase();
+  console.log("[LOGIN] Login button clicked, waiting for home page...");
+  await sleep(6000);
 
-        const visible =
-          element.offsetWidth > 0 &&
-          element.offsetHeight > 0;
+  // Clear 3 Popups
+  await clearAllPopups();
 
-        return visible && (text === "1m" || text === "1 min" || text.includes("wingo 1m"));
-      });
+  // Click 'Lottery' tab on Home Page
+  console.log("[NAVIGATION] Clicking 'Lottery' category...");
+  await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll("div, span, p, a"));
+    const lotteryBtn = items.find((el) => (el.innerText || "").trim().toLowerCase() === "lottery");
+    if (lotteryBtn) lotteryBtn.click();
+  });
+  await sleep(2500);
 
-      if (!target) return false;
+  // Click 'WINGO' Game card
+  console.log("[NAVIGATION] Selecting 'WINGO' game card...");
+  await page.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll("div, span, p, img"));
+    const wingoCard = cards.find((el) => (el.innerText || "").trim().toUpperCase().includes("WINGO"));
+    if (wingoCard) wingoCard.click();
+  });
+  await sleep(4000);
 
-      target.click();
-      return true;
+  // Clear any popup inside game
+  await clearAllPopups();
+
+  // Switch to 'WinGo 1 Min' Tab
+  console.log("[NAVIGATION] Switching to 'WinGo 1 Min' tab...");
+  await page.evaluate(() => {
+    const tabs = Array.from(document.querySelectorAll("div, span, p, button"));
+    const targetTab = tabs.find((el) => {
+      const txt = (el.innerText || "").trim();
+      return txt === "WinGo 1 Min" || txt === "1 Min" || txt.includes("1 Min");
     });
-
-    if (clicked) {
-      console.log("[GAME] 1M Tab clicked successfully.");
-    }
-  } catch (e) {
-    console.log("[GAME] 1M Tab check skipped.");
-  }
-
+    if (targetTab) targetTab.click();
+  });
   await sleep(3000);
-  console.log("[GAME] WinGo 1M page is active and listening for network responses!");
+
+  // Scroll down to view Game History Table
+  console.log("[NAVIGATION] Scrolling down to Game History Table...");
+  await page.evaluate(() => {
+    window.scrollBy(0, 400);
+  });
+  await sleep(1500);
+
+  console.log("[NAVIGATION] Navigation complete! Now active on WinGo 1M Game History.");
 }
 
-// =======================================================
-// SCRIPT 11 — EXTRACT RESULT
-// =======================================================
-
-function extractResult(responseData) {
-  if (!responseData || typeof responseData !== "object") {
-    return null;
-  }
-
-  let list = null;
-
-  if (responseData.data && Array.isArray(responseData.data.list)) {
-    list = responseData.data.list;
-  } else if (Array.isArray(responseData.list)) {
-    list = responseData.list;
-  } else if (responseData.data && Array.isArray(responseData.data)) {
-    list = responseData.data;
-  } else if (Array.isArray(responseData)) {
-    list = responseData;
-  }
-
-  if (!list || list.length === 0) {
-    return null;
-  }
-
-  const item = list[0];
-  if (!item || typeof item !== "object") {
-    return null;
-  }
-
-  const period =
-    item.issueNumber ??
-    item.issue ??
-    item.period ??
-    item.periodNumber ??
-    item.drawNumber ??
-    item.gameNo;
-
-  const rawNumber =
-    item.number ??
-    item.result ??
-    item.openNumber ??
-    item.winNumber ??
-    item.winNum;
-
-  if (period === undefined || period === null || rawNumber === undefined || rawNumber === null) {
-    return null;
-  }
-
-  let number = Number(String(rawNumber).trim());
-
-  if (!Number.isFinite(number) || number < 0 || number > 9) {
-    return null;
-  }
-
-  return {
-    period: String(period).trim(),
-    number,
-    result: number >= 5 ? "BIG" : "SMALL"
-  };
-}
-
-// =======================================================
-// SCRIPT 12 — FORWARD RESULT TO BOT BUSINESS
-// =======================================================
-
+// 3. API Forwarding Function
 async function sendResultToBotBusiness(resultData) {
   try {
     const payload = {
@@ -543,203 +203,102 @@ async function sendResultToBotBusiness(resultData) {
       }
     };
 
-    console.log("--------------------------------------------------");
-    console.log("[BOTBUSINESS API HIT] Sending to:", BOTBUSINESS_API);
-    console.log("[PAYLOAD]:", JSON.stringify(payload));
-
+    console.log("==================================================");
+    console.log("[LIVE FORWARD] Period:", resultData.period, "| Number:", resultData.number, "| Result:", resultData.result);
+    
     const response = await axios.post(BOTBUSINESS_API, payload, {
       timeout: 15000,
       headers: { "Content-Type": "application/json" }
     });
 
-    console.log("[BOTBUSINESS RESPONSE STATUS]:", response.status);
-    console.log("[BOTBUSINESS RESPONSE DATA]:", JSON.stringify(response.data));
-    console.log("--------------------------------------------------");
-
+    console.log("[BOTBUSINESS RESPONSE]: Status", response.status, JSON.stringify(response.data));
+    console.log("==================================================");
     return true;
   } catch (error) {
-    console.error(
-      "[BOTBUSINESS API ERROR]:",
-      error.response ? JSON.stringify(error.response.data) : error.message
-    );
+    console.error("[FORWARD ERROR]:", error.message);
     return false;
   }
 }
 
-// =======================================================
-// SCRIPT 13 — ENHANCED DOM & TEXT SCRAPER (AUTOMATIC POLLING)
-// =======================================================
-
+// 4. Game History Scraper Loop
 function setupResponseMonitor() {
-  console.log("[MONITOR] Activating Response Monitor & Scraper...");
+  console.log("[MONITOR] Starting Game History UI Scanner...");
 
-  // 1. Network Listener for Standard API JSON Interception
-  page.on("response", async (response) => {
-    try {
-      const url = response.url();
-      const isGameApi = 
-        url.includes("getHistory") || 
-        url.includes("WinGo") || 
-        url.includes("GetNoList") || 
-        url.includes("GetGame") ||
-        url.includes("lottery");
-
-      if (!isGameApi || !response.ok()) return;
-
-      let responseData;
-      try {
-        responseData = await response.json();
-      } catch (err) {
-        return;
-      }
-
-      const extracted = extractResult(responseData);
-      if (!extracted) return;
-
-      const resultKey = extracted.period + ":" + extracted.number;
-      if (resultKey === lastResultKey) return;
-
-      lastResultKey = resultKey;
-      console.log("[NETWORK API RESULT INTERCEPTED]:", JSON.stringify(extracted));
-      await sendResultToBotBusiness(extracted);
-    } catch (e) {}
-  });
-
-  // 2. Continuous DOM Scraper Fallback (Every 5 seconds)
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
 
       const extracted = await page.evaluate(() => {
-        const allText = document.body ? document.body.innerText : "";
+        // Find rows in game history table
+        const rows = Array.from(document.querySelectorAll('tr, .van-row, div[class*="record"], div[class*="history"], div'));
         
-        // Match 14-15 digit WinGo period (e.g. 20261015100010470)
-        const periodMatch = allText.match(/202[5-9]\d{10,14}/);
-        if (!periodMatch) return null;
-
-        const period = periodMatch[0];
-        const numbersMatch = allText.match(/\b[0-9]\b/g);
-
-        if (!numbersMatch || numbersMatch.length === 0) return null;
-
-        const number = parseInt(numbersMatch[numbersMatch.length - 1]);
-
-        return {
-          period: period,
-          number: number
-        };
+        for (let row of rows) {
+          const txt = row.innerText || "";
+          // Search 14-digit period format
+          const periodMatch = txt.match(/202[5-9]\d{10,14}/);
+          if (periodMatch) {
+            const period = periodMatch[0];
+            const digits = txt.match(/\b[0-9]\b/g);
+            if (digits && digits.length > 0) {
+              const number = parseInt(digits[0]); // First digit in table row is winning number
+              if (!isNaN(number) && number >= 0 && number <= 9) {
+                return { period, number };
+              }
+            }
+          }
+        }
+        return null;
       });
 
-      if (!extracted) return;
+      if (extracted && extracted.period && !isNaN(extracted.number)) {
+        const key = extracted.period + ":" + extracted.number;
+        if (key !== lastResultKey) {
+          lastResultKey = key;
+          const resultType = extracted.number >= 5 ? "BIG" : "SMALL";
+          console.log("[SCRAPED SUCCESS]:", extracted.period, extracted.number, resultType);
 
-      const resultKey = extracted.period + ":" + extracted.number;
-      if (resultKey === lastResultKey) return;
-
-      lastResultKey = resultKey;
-
-      const finalData = {
-        period: String(extracted.period),
-        number: extracted.number,
-        result: extracted.number >= 5 ? "BIG" : "SMALL"
-      };
-
-      console.log("[DOM LIVE RESULT FOUND ON SCREEN]:", JSON.stringify(finalData));
-      await sendResultToBotBusiness(finalData);
-
+          await sendResultToBotBusiness({
+            period: String(extracted.period),
+            number: extracted.number,
+            result: resultType
+          });
+        }
+      }
     } catch (err) {
       console.error("[SCRAPER LOOP ERROR]:", err.message);
     }
-  }, 5000);
-
-  console.log("[MONITOR] Setup completed and active.");
+  }, 3000);
 }
 
-// =======================================================
-// SCRIPT 14 — KEEPALIVE
-// =======================================================
-
 function startKeepAlive() {
-  if (keepAliveTimer) {
-    clearInterval(keepAliveTimer);
-  }
-
-  console.log("[KEEPALIVE] Starting 15-second loop.");
-
+  if (keepAliveTimer) clearInterval(keepAliveTimer);
   keepAliveTimer = setInterval(async () => {
     try {
-      if (
-        !browser ||
-        !browser.isConnected() ||
-        !page ||
-        page.isClosed()
-      ) {
-        return;
+      if (page && !page.isClosed()) {
+        await page.evaluate(() => window.scrollBy(0, 1));
       }
-
-      await page.evaluate(() => {
-        window.scrollBy(0, 1);
-        window.scrollBy(0, -1);
-      });
-    } catch (error) {
-      console.error(
-        "[KEEPALIVE] Error:",
-        error.message
-      );
-    }
+    } catch (e) {}
   }, 15000);
 }
 
-// =======================================================
-// SCRIPT 15 — START WORKER
-// =======================================================
-
 async function startWorker() {
-  if (workerStarting || workerStarted) {
-    console.log("[WORKER] Already starting or running.");
-    return;
-  }
-
+  if (workerStarting || workerStarted) return;
   workerStarting = true;
 
   try {
     validateConfiguration();
-
-    console.log("[WORKER] Starting...");
-
+    console.log("[WORKER] Launching worker sequence...");
     await launchBrowser();
-
+    await navigateToWinGo1M();
     setupResponseMonitor();
 
-    await openLoginPage();
-
-    await loginToWebsite();
-
-    await openWinGoPage();
-
     workerStarted = true;
-
-    console.log("[WORKER] Startup sequence completed.");
-
+    console.log("[WORKER] 24/7 Monitoring Active!");
     startKeepAlive();
   } catch (error) {
     workerStarted = false;
-
-    console.error(
-      "[WORKER] Startup failed:",
-      error.stack || error.message
-    );
-
-    if (browser) {
-      try {
-        await browser.close();
-      } catch (closeError) {
-        console.error(
-          "[BROWSER] Close error:",
-          closeError.message
-        );
-      }
-    }
-
+    console.error("[WORKER CRASHED]:", error.message);
+    if (browser) { try { await browser.close(); } catch (e) {} }
     browser = null;
     page = null;
   } finally {
@@ -747,34 +306,7 @@ async function startWorker() {
   }
 }
 
-// =======================================================
-// SCRIPT 16 — EXPRESS SERVER
-// =======================================================
-
 app.listen(PORT, "0.0.0.0", () => {
-  console.log("[SERVER] Listening on port:", PORT);
-
-  console.log("[SERVER] Health endpoint: /health");
-
-  startWorker().catch((error) => {
-    console.error(
-      "[WORKER] Unexpected error:",
-      error.stack || error.message
-    );
-  });
-});
-
-// =======================================================
-// SCRIPT 17 — PROCESS ERROR HANDLERS
-// =======================================================
-
-process.on("unhandledRejection", (reason) => {
-  console.error("[PROCESS] Unhandled rejection:", reason);
-});
-
-process.on("uncaughtException", (error) => {
-  console.error(
-    "[PROCESS] Uncaught exception:",
-    error.stack || error.message
-  );
+  console.log("[SERVER] Active on port:", PORT);
+  startWorker().catch((err) => console.error("[STARTUP ERROR]:", err.message));
 });
