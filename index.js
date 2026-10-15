@@ -1,7 +1,7 @@
 /*
 =========================================================
  PROJECT : DmFirst WinGo 1M Worker
- PURPOSE : Final Code with Game History Tab Click & Shadow DOM Support
+ PURPOSE : Final Table Row Scraper for WinGo 1M Game History
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
@@ -170,25 +170,13 @@ async function navigateToWinGo1M() {
   });
   await sleep(3000);
 
-  // Explicitly click on "Game history" tab to render the table
-  console.log("[NAVIGATION] Clicking 'Game history' tab to load history table...");
+  console.log("[NAVIGATION] Scrolling down to Game History Table...");
   await page.evaluate(() => {
-    const elements = Array.from(document.querySelectorAll("div, span, p, a"));
-    const historyTab = elements.find((el) => {
-      const txt = (el.innerText || "").trim().toLowerCase();
-      return txt === "game history" || txt === "history";
-    });
-    if (historyTab) historyTab.click();
+    window.scrollBy(0, 500);
   });
   await sleep(2000);
 
-  console.log("[NAVIGATION] Scrolling down to Game History Table...");
-  await page.evaluate(() => {
-    window.scrollBy(0, 400);
-  });
-  await sleep(1500);
-
-  console.log("[NAVIGATION] Navigation complete! Now active on WinGo 1M Game History.");
+  console.log("[NAVIGATION] Navigation complete! Active on Game History Table.");
 }
 
 async function sendResultToBotBusiness(resultData) {
@@ -221,56 +209,35 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// Final Deep DOM & Shadow DOM Scanner Loop (Updated for 18-digit period)
+// Final Precise History Table Scraper
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Deep DOM & Shadow DOM Scanner...");
+  console.log("[MONITOR] Starting Precise History Table Scanner...");
 
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
 
       const scannedData = await page.evaluate(() => {
-        const parseText = (text) => {
-          // 18-digit period number match karne ke liye updated regex
+        // Game history table ke rows ya text blocks ko dhoondo jisme 18-digit period ho
+        const elements = Array.from(document.querySelectorAll("div, span, p, tr"));
+        
+        for (let el of elements) {
+          const text = (el.innerText || "").trim();
+          // 18-digit period number match (jaise 20261015100010552)
           const pMatch = text.match(/202[5-9]\d{12,16}/);
-          if (!pMatch) return null;
-          const period = pMatch[0];
-          const digits = text.match(/\b[0-9]\b/g);
-          if (digits && digits.length > 0) {
-            const number = parseInt(digits[0]);
-            if (!isNaN(number) && number >= 0 && number <= 9) {
-              return { period, number };
+          if (pMatch) {
+            const period = pMatch[0];
+            // Usi text ke andar se winning number nikalna (0 se 9 ke beech ka digit)
+            const digits = text.match(/\b[0-9]\b/g);
+            if (digits && digits.length > 0) {
+              const number = parseInt(digits[0]);
+              if (!isNaN(number) && number >= 0 && number <= 9) {
+                return { period, number };
+              }
             }
           }
-          return null;
-        };
-
-        // 1. Check Main Document Body
-        let res = parseText(document.body ? document.body.innerText : "");
-        if (res) return res;
-
-        // 2. Check Shadow DOM roots if available
-        const allElements = document.querySelectorAll("*");
-        for (let el of allElements) {
-          if (el.shadowRoot) {
-            res = parseText(el.shadowRoot.textContent || "");
-            if (res) return res;
-          }
         }
-
-        // 3. Check Iframes
-        const frames = Array.from(document.querySelectorAll("iframe"));
-        for (let frame of frames) {
-          try {
-            const frameDoc = frame.contentDocument || frame.contentWindow.document;
-            if (frameDoc && frameDoc.body) {
-              res = parseText(frameDoc.body.innerText);
-              if (res) return res;
-            }
-          } catch (e) {}
-        }
-
-        return { error: "Period not found anywhere" };
+        return { error: "Latest history row not found yet" };
       });
 
       if (scannedData.period && scannedData.number !== undefined) {
