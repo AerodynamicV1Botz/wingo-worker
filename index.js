@@ -36,7 +36,7 @@ async function startBot() {
     });
 
     const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     // Network Interceptor for WinGo Live Results
     page.on('response', async (response) => {
@@ -75,56 +75,57 @@ async function startBot() {
     console.log("[LOGIN] Navigating to Login Page...");
     await page.goto('https://www.dmfirst0.com/#/login', { waitUntil: 'networkidle2', timeout: 60000 });
 
-    await page.waitForSelector('input[type="text"], input[type="number"]', { timeout: 15000 });
-    await page.type('input[type="text"], input[type="number"]', DEMO_USER, { delay: 100 });
-    await page.type('input[type="password"]', DEMO_PASS, { delay: 100 });
+    // Automatic Login Handling using env credentials
+    try {
+        console.log("[LOGIN] Filling credentials...");
+        await page.waitForSelector('input', { timeout: 15000 });
+        
+        const inputs = await page.$$('input');
+        if (inputs.length >= 2) {
+            await inputs[0].type(DEMO_USER, { delay: 100 });
+            await inputs[1].type(DEMO_PASS, { delay: 100 });
+        }
 
-    console.log("[LOGIN] Submitting credentials...");
-    await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        const loginBtn = buttons.find(el => el.textContent.includes('Log in'));
-        if (loginBtn) loginBtn.click();
-    });
+        // Click login button
+        await page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const loginBtn = buttons.find(el => el.textContent.toLowerCase().includes('log') || el.textContent.includes('登录'));
+            if (loginBtn) loginBtn.click();
+        });
 
-    await page.waitForTimeout(5000);
+        console.log("[LOGIN] Credentials submitted, waiting for dashboard...");
+        await page.waitForTimeout(6000);
+    } catch (err) {
+        console.log("[LOGIN NOTICE] Manual input skipped or already logged in:", err.message);
+    }
 
+    // Popup Confirm handling
     try {
         await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button, div'));
-            const confirmBtn = btns.find(el => el.textContent.trim() === 'Confirm');
+            const btns = Array.from(document.querySelectorAll('button, div, span'));
+            const confirmBtn = btns.find(el => el.textContent.trim() === 'Confirm' || el.textContent.trim() === '确定');
             if (confirmBtn) confirmBtn.click();
         });
     } catch(e) {}
 
     console.log("[NAVIGATE] Moving to Lottery -> WinGo 1 Min...");
-    await page.evaluate(() => {
-        const items = Array.from(document.querySelectorAll('div, span, p'));
-        const lotteryTab = items.find(el => el.textContent.trim() === 'Lottery');
-        if (lotteryTab) lotteryTab.click();
-    });
-
+    await page.goto('https://www.dmfirst0.com/#/lottery', { waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
     await page.waitForTimeout(3000);
 
+    // Click WinGo 1 Min game section
     await page.evaluate(() => {
-        const items = Array.from(document.querySelectorAll('div, span'));
-        const wingoCard = items.find(el => el.textContent.trim() === 'WINGO');
-        if (wingoCard) wingoCard.click();
+        const elements = Array.from(document.querySelectorAll('div, span, a'));
+        const target = elements.find(el => el.textContent.includes('WinGo 1M') || el.textContent.includes('WinGo 1 Min'));
+        if (target) target.click();
     });
 
-    await page.waitForTimeout(3000);
+    console.log("[SUCCESS] Worker active and monitoring WinGo 1 Min results!");
 
-    await page.evaluate(() => {
-        const items = Array.from(document.querySelectorAll('div, span'));
-        const min1Tab = items.find(el => el.textContent.trim() === 'WinGo 1 Min');
-        if (min1Tab) min1Tab.click();
-    });
-
-    console.log("[SUCCESS] Worker active on WinGo 1 Min page!");
-
+    // Keep session alive with small scrolls
     setInterval(async () => {
         try {
-            await page.evaluate(() => window.scrollBy(0, 20));
-            await page.evaluate(() => window.scrollBy(0, -20));
+            await page.evaluate(() => window.scrollBy(0, 10));
+            await page.evaluate(() => window.scrollBy(0, -10));
         } catch (err) {}
     }, 15000);
 }
