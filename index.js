@@ -542,7 +542,7 @@ function extractResult(responseData) {
 }
 
 // =======================================================
-// SCRIPT 12 — FORWARD RESULT TO BOT BUSINESS
+// SCRIPT 12 — FORWARD RESULT TO BOT BUSINESS (WITH API LOGS)
 // =======================================================
 
 async function sendResultToBotBusiness(resultData) {
@@ -554,97 +554,96 @@ async function sendResultToBotBusiness(resultData) {
         period: String(resultData.period).trim(),
         number: resultData.number,
         result: String(resultData.result).trim(),
-        platform: "DMFIRST GAME"  // Exact match with /wingo_channel_loop storage key
+        platform: "DMFIRST GAME"
       }
     };
 
-    console.log("==================================================");
-    console.log("[API REQUEST SENT TO BOTBUSINESS]");
-    console.log("[API PAYLOAD]:", JSON.stringify(payload));
+    console.log("--------------------------------------------------");
+    console.log("[BOTBUSINESS API HIT] Sending to:", BOTBUSINESS_API);
+    console.log("[PAYLOAD]:", JSON.stringify(payload));
 
-    const response = await axios.post(
-      BOTBUSINESS_API,
-      payload,
-      {
-        timeout: 20000,
-        headers: {
-          "Content-Type": "application/json"
-        }
-      }
-    );
+    const response = await axios.post(BOTBUSINESS_API, payload, {
+      timeout: 15000,
+      headers: { "Content-Type": "application/json" }
+    });
 
-    console.log("[API RESPONSE STATUS]:", response.status);
-    console.log("[API RESPONSE DATA]:", JSON.stringify(response.data));
-    console.log("==================================================");
+    console.log("[BOTBUSINESS RESPONSE STATUS]:", response.status);
+    console.log("[BOTBUSINESS RESPONSE DATA]:", JSON.stringify(response.data));
+    console.log("--------------------------------------------------");
 
     return true;
   } catch (error) {
     console.error(
-      "[API FORWARDING FAILED]:",
-      error.response
-        ? JSON.stringify(error.response.data)
-        : error.message
+      "[BOTBUSINESS API ERROR]:",
+      error.response ? JSON.stringify(error.response.data) : error.message
     );
-
     return false;
   }
 }
 
 // =======================================================
-// SCRIPT 13 — NETWORK RESPONSE MONITOR (REAL-TIME LOGGING)
+// SCRIPT 13 — ENHANCED DOM & TEXT SCRAPER (WITH DEBUG LOGS)
 // =======================================================
 
 function setupResponseMonitor() {
-  console.log("[MONITOR] Activating response listener...");
+  console.log("[MONITOR] Activating Enhanced DOM Scraper...");
 
-  page.on("response", async (response) => {
+  // Har 5 second mein page ke saare text ko scan karega
+  setInterval(async () => {
     try {
-      const url = response.url();
+      if (!page || page.isClosed()) return;
 
-      // Broad matching for DmFirst WinGo game APIs
-      const isGameApi = 
-        url.includes("getHistory") || 
-        url.includes("WinGo") || 
-        url.includes("GetNoList") || 
-        url.includes("GetGame") ||
-        url.includes("lottery") ||
-        url.includes("history");
+      const extracted = await page.evaluate(() => {
+        const allText = document.body ? document.body.innerText : "";
+        
+        // 14 ya 15 digit ka period dhoondho (jaise 20261015...)
+        const periodMatch = allText.match(/202[5-9]\d{10,14}/);
+        if (!periodMatch) return { status: "No Period Found" };
 
-      if (!isGameApi) return;
-      if (!response.ok()) return;
+        const period = periodMatch[0];
 
-      let responseData;
-      try {
-        responseData = await response.json();
-      } catch (error) {
-        return;
-      }
+        // Uske aas-pass ke digits me se winning number (0-9) dhoondho
+        const numbersMatch = allText.match(/\b[0-9]\b/g);
+        if (!numbersMatch || numbersMatch.length === 0) {
+          return { period, status: "Period found but no numbers" };
+        }
 
-      console.log("[API DETECTED] URL:", url);
+        const number = parseInt(numbersMatch[numbersMatch.length - 1]);
 
-      const extracted = extractResult(responseData);
+        return {
+          period: period,
+          number: number,
+          status: "Success"
+        };
+      });
 
-      if (!extracted) {
-        console.log("[API DEBUG JSON SNIPPET]:", JSON.stringify(responseData).substring(0, 250));
+      if (extracted.status !== "Success") {
         return;
       }
 
       const resultKey = extracted.period + ":" + extracted.number;
-
       if (resultKey === lastResultKey) return;
 
       lastResultKey = resultKey;
 
-      console.log("[LIVE RESULT MATCHED]", JSON.stringify(extracted));
+      const finalData = {
+        period: String(extracted.period),
+        number: extracted.number,
+        result: extracted.number >= 5 ? "BIG" : "SMALL"
+      };
 
-      await sendResultToBotBusiness(extracted);
-    } catch (error) {
-      console.error("[MONITOR] Processing error:", error.message);
+      console.log("[LIVE RESULT FOUND ON SCREEN]:", JSON.stringify(finalData));
+
+      await sendResultToBotBusiness(finalData);
+
+    } catch (err) {
+      console.error("[MONITOR SCRAPER ERROR]:", err.message);
     }
-  });
+  }, 5000);
 
-  console.log("[MONITOR] Listener active.");
+  console.log("[MONITOR] Enhanced Scraper loop active.");
 }
+
 
 // =======================================================
 // SCRIPT 14 — KEEPALIVE
