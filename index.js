@@ -209,9 +209,9 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// Network API Interceptor Scraper
+// Enhanced Network API Interceptor with Periodic Trigger
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Network API Interceptor...");
+  console.log("[MONITOR] Starting Active Network API Interceptor...");
 
   page.on("response", async (response) => {
     try {
@@ -265,10 +265,14 @@ function startKeepAlive() {
   keepAliveTimer = setInterval(async () => {
     try {
       if (page && !page.isClosed()) {
-        await page.evaluate(() => window.scrollBy(0, 1));
+        // Har 10 second mein thoda scroll karke history table ko active karenge taaki API call ho
+        await page.evaluate(() => {
+          window.scrollBy(0, 10);
+          setTimeout(() => window.scrollBy(0, -10), 500);
+        });
       }
     } catch (e) {}
-  }, 15000);
+  }, 10000);
 }
 
 async function startWorker() {
