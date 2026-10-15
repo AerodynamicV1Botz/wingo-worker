@@ -42,9 +42,9 @@ const BOTBUSINESS_API =
   "https://api.botbusiness.net/v1/bots/3001907/runs";
 
 // Replace these placeholders with your actual credentials.
-const SECRET_TOKEN = "PASTE_YOUR_SECRET_TOKEN_HERE";
-const DEMO_USER = "PASTE_YOUR_DEMO_USERNAME_HERE";
-const DEMO_PASS = "PASTE_YOUR_DEMO_PASSWORD_HERE";
+const SECRET_TOKEN = "wingo_secret_2026";
+const DEMO_USER = "922878117";
+const DEMO_PASS = "Demo1432";
 
 const LOGIN_URL = "https://www.dmfirst0.com/#/login";
 
