@@ -1,3 +1,10 @@
+const fs = require("fs");
+const puppeteer = require("puppeteer");
+
+console.log("[DEBUG] Puppeteer version:", require("puppeteer/package.json").version);
+console.log("[DEBUG] Cache directory:", process.env.PUPPETEER_CACHE_DIR || "default");
+console.log("[DEBUG] Expected Chrome path:", puppeteer.executablePath());
+console.log("[DEBUG] Chrome exists:", fs.existsSync(puppeteer.executablePath()));
 const puppeteer = require('puppeteer');
 const express = require('express');
 const axios = require('axios');
