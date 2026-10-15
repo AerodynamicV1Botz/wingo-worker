@@ -214,16 +214,28 @@ async function sendResultToBotBusiness(resultData) {
 
 // 4. Dual Scraper (Network + HTML Inspector)
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Dual Scraper & Inspector...");
+  console.log("[MONITOR] Starting Full URL Debugger & Inspector...");
+
+  // Sabhi incoming network requests ke URL print karega taaki exact API pata chale
+  page.on("request", (request) => {
+    const url = request.url();
+    if (url.includes("api") || url.includes("game") || url.includes("lottery") || url.includes("Record") || url.includes("History")) {
+      console.log("[DEBUG REQUEST URL]:", url);
+    }
+  });
 
   page.on("response", async (response) => {
     try {
       const url = response.url();
       if (!response.ok()) return;
 
-      if (url.includes("GetNoList") || url.includes("getHistory") || url.includes("WinGo") || url.includes("history")) {
+      // Agar koi bhi game ya history se milti julti response aayi
+      if (url.includes("history") || url.includes("list") || url.includes("game") || url.includes("WinGo") || url.includes("lottery") || url.includes("open")) {
         let json;
         try { json = await response.json(); } catch (e) { return; }
+
+        console.log("[API RESPONSE FOUND]:", url);
+        console.log("[API DATA]:", JSON.stringify(json).substring(0, 300)); // First 300 chars
 
         let list = (json && json.data) ? (json.data.list || json.data) : (json ? json.list : null);
         if (Array.isArray(list) && list.length > 0) {
@@ -237,7 +249,7 @@ function setupResponseMonitor() {
             if (key !== lastResultKey) {
               lastResultKey = key;
               const resultType = number >= 5 ? "BIG" : "SMALL";
-              console.log("[NETWORK RESULT]:", period, number, resultType);
+              console.log("[SUCCESSFUL CAPTURE]:", period, number, resultType);
               await sendResultToBotBusiness({ period: String(period), number, result: resultType });
             }
           }
@@ -246,14 +258,11 @@ function setupResponseMonitor() {
     } catch (err) {}
   });
 
+  // HTML Scraper Fallback
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
-
-      const pageText = await page.evaluate(() => {
-        return document.documentElement ? document.documentElement.innerText : "";
-      });
-
+      const pageText = await page.evaluate(() => document.documentElement ? document.documentElement.innerText : "");
       const periodMatch = pageText.match(/202[5-9]\d{10,14}/);
       if (periodMatch) {
         const period = periodMatch[0];
@@ -261,7 +270,6 @@ function setupResponseMonitor() {
         if (digits && digits.length > 0) {
           const number = parseInt(digits[digits.length - 1]);
           const key = period + ":" + number;
-          
           if (key !== lastResultKey) {
             lastResultKey = key;
             const resultType = number >= 5 ? "BIG" : "SMALL";
