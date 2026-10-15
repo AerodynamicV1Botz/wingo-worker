@@ -11,7 +11,7 @@ AUTH_TOKEN = AUTH_TOKEN.replace(/\s+/g, '').trim();
 let lastPeriod = "";
 
 app.get('/', (req, res) => {
-  res.send('DmFirst WinGo 30S Worker Active 24/7!');
+  res.send('DmFirst WinGo 1M Worker Active 24/7!');
 });
 
 app.listen(PORT, () => {
@@ -20,24 +20,23 @@ app.listen(PORT, () => {
 
 async function fetchWinGoResult() {
   try {
-    // Both endpoints to guarantee fallback
-    const API_URL = `https://www.dmfirst0.com/#/saasLottery/WinGo?gameCode=WinGo_1M&lottery=WinGo`;
+    // Direct main domain API endpoint with WinGo 1M parameters
+    const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=WinGo_1M&lottery=WinGo`;
 
     const response = await axios.get(API_URL, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
-        'Authorization': AUTH_TOKEN.startsWith('Bearer') ? AUTH_TOKEN : `Bearer ${AUTH_TOKEN}`,
+        'Authorization': AUTH_TOKEN,
         'token': AUTH_TOKEN,
         'tenant': 'ar103',
-        'Referer': 'https://www.dmfirst0.com/',
+        'Referer': 'https://www.dmfirst0.com/#/saasLottery/WinGo?gameCode=WinGo_1M&lottery=WinGo',
         'Origin': 'https://www.dmfirst0.com'
       },
       timeout: 8000
     });
 
-    // Validating JSON list response
-    if (response.data && response.data.data && Array.isArray(response.data.data.list)) {
+    if (response.data && response.data.data && response.data.data.list) {
       const latestGame = response.data.data.list[0];
       const period = latestGame.period || latestGame.issueNumber;
       const numberResult = parseInt(latestGame.number || latestGame.result);
@@ -53,19 +52,14 @@ async function fetchWinGoResult() {
               token: SECRET_TOKEN,
               period: String(period),
               result: resultType,
-              platform: "WinGo 30S"
+              platform: "WinGo 1 Min"
             }
           });
-          console.log(`[SUCCESS] [WinGo 30S] Period: ${period} | Result: ${resultType}`);
+          console.log(`[SUCCESS] [WinGo 1 Min] Period: ${period} | Result: ${resultType}`);
         }
       }
     } else {
-      // If server sends HTML challenge instead of JSON
-      if (typeof response.data === 'string' && response.data.includes('<!DOCTYPE html>')) {
-        console.log(`[WARNING] WAF Challenge Triggered. Token or Session re-verification needed.`);
-      } else {
-        console.log(`[API RESPONSE]`, JSON.stringify(response.data));
-      }
+      console.log(`[API RESPONSE]`, JSON.stringify(response.data));
     }
   } catch (error) {
     console.error(`[ERROR] Fetch Failed:`, error.message);
