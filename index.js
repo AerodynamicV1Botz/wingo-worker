@@ -85,7 +85,7 @@ async function launchBrowser() {
   });
 
   page = await browser.newPage();
-  await page.setViewport({ width: 375, height: 812, isMobile: true }); // Mobile Viewport
+  await page.setViewport({ width: 375, height: 812, isMobile: true });
   page.setDefaultNavigationTimeout(60000);
   page.setDefaultTimeout(30000);
 
@@ -122,11 +122,9 @@ async function clearAllPopups() {
 async function navigateToWinGo1M() {
   console.log("[NAVIGATION] Starting step-by-step navigation...");
 
-  // Open Login Page
   await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
   await sleep(4000);
 
-  // Fill Login
   console.log("[LOGIN] Entering phone & password...");
   const inputs = await page.$$("input");
   if (inputs.length >= 2) {
@@ -143,10 +141,8 @@ async function navigateToWinGo1M() {
   console.log("[LOGIN] Login button clicked, waiting for home page...");
   await sleep(6000);
 
-  // Clear 3 Popups
   await clearAllPopups();
 
-  // Click 'Lottery' tab on Home Page
   console.log("[NAVIGATION] Clicking 'Lottery' category...");
   await page.evaluate(() => {
     const items = Array.from(document.querySelectorAll("div, span, p, a"));
@@ -155,7 +151,6 @@ async function navigateToWinGo1M() {
   });
   await sleep(2500);
 
-  // Click 'WINGO' Game card
   console.log("[NAVIGATION] Selecting 'WINGO' game card...");
   await page.evaluate(() => {
     const cards = Array.from(document.querySelectorAll("div, span, p, img"));
@@ -164,10 +159,8 @@ async function navigateToWinGo1M() {
   });
   await sleep(4000);
 
-  // Clear any popup inside game
   await clearAllPopups();
 
-  // Switch to 'WinGo 1 Min' Tab
   console.log("[NAVIGATION] Switching to 'WinGo 1 Min' tab...");
   await page.evaluate(() => {
     const tabs = Array.from(document.querySelectorAll("div, span, p, button"));
@@ -179,7 +172,6 @@ async function navigateToWinGo1M() {
   });
   await sleep(3000);
 
-  // Scroll down to view Game History Table
   console.log("[NAVIGATION] Scrolling down to Game History Table...");
   await page.evaluate(() => {
     window.scrollBy(0, 400);
@@ -220,27 +212,25 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// 4. Game History Scraper Loop
+// 4. Accurate Table Row Scanner Loop
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Game History UI Scanner...");
+  console.log("[MONITOR] Starting Accurate Table Row Scanner...");
 
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
 
       const extracted = await page.evaluate(() => {
-        // Find rows in game history table
-        const rows = Array.from(document.querySelectorAll('tr, .van-row, div[class*="record"], div[class*="history"], div'));
+        const rows = Array.from(document.querySelectorAll('.van-row, tr, div, span'));
         
         for (let row of rows) {
-          const txt = row.innerText || "";
-          // Search 14-digit period format
-          const periodMatch = txt.match(/202[5-9]\d{10,14}/);
+          const text = (row.innerText || "").trim();
+          const periodMatch = text.match(/202[5-9]\d{10,14}/);
           if (periodMatch) {
             const period = periodMatch[0];
-            const digits = txt.match(/\b[0-9]\b/g);
+            const digits = text.match(/\b[0-9]\b/g);
             if (digits && digits.length > 0) {
-              const number = parseInt(digits[0]); // First digit in table row is winning number
+              const number = parseInt(digits[0]);
               if (!isNaN(number) && number >= 0 && number <= 9) {
                 return { period, number };
               }
@@ -265,7 +255,7 @@ function setupResponseMonitor() {
         }
       }
     } catch (err) {
-      console.error("[SCRAPER LOOP ERROR]:", err.message);
+      console.error("[SCANNER ERROR]:", err.message);
     }
   }, 3000);
 }
