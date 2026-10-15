@@ -412,7 +412,7 @@ async function openWinGoPage() {
   console.log("[GAME] Opening Lottery page...");
 
   await page.goto(
-    "https://www.dmfirst0.com/#/lottery",
+    "https://www.dmfirst0.com/#/saasLottery/WinGo?gameCode=WinGo_1M&lottery=WinGo",
     {
       waitUntil: "domcontentloaded",
       timeout: 60000
