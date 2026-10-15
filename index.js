@@ -1,7 +1,6 @@
 /*
 =========================================================
- PROJECT : DmFirst WinGo 1M Worker
- PURPOSE : Final Production Code with CDP WebSocket & DOM Fallback
+ PROJECT : DmFirst WinGo 1M Worker (Final Production)
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
@@ -21,11 +20,11 @@ app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 10000;
 
-// Yahan aap apna BotBusiness API URL aur Secret Token direct daal sakte hain ya Render Environment Variables use kar sakte hain
 const BOTBUSINESS_API = process.env.BOTBUSINESS_API || "https://api.botbusiness.net/v1/bots/3001907/runs";
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "wingo_secret_2026";
 const DEMO_USER = process.env.DEMO_USER || "922878117";
 const DEMO_PASS = process.env.DEMO_PASS || "Demo1432";
+const ADMIN_ID = "7897324623";
 const LOGIN_URL = "https://www.dmfirst0.com/#/login";
 
 let browser = null;
@@ -64,6 +63,23 @@ function checkChrome() {
     throw new Error("Chrome executable missing.");
   }
   return executablePath;
+}
+
+async function notifyAdminConnection() {
+  try {
+    const payload = {
+      command: "/api_admin_notifier",
+      options: {
+        token: SECRET_TOKEN,
+        admin_id: ADMIN_ID,
+        message: "🟢 **RENDER WORKER CONNECTED!**\n\nDmFirst WinGo 1M scraper is now live and successfully linked with BotBusiness 24/7!"
+      }
+    };
+    await axios.post(BOTBUSINESS_API, payload, { timeout: 10000 });
+    console.log("[ADMIN NOTIFIED]: Connection alert sent to admin.");
+  } catch (err) {
+    console.error("[NOTIFY ERROR]:", err.message);
+  }
 }
 
 async function launchBrowser() {
@@ -208,7 +224,6 @@ async function sendResultToBotBusiness(resultData) {
 function setupResponseMonitor() {
   console.log("[MONITOR] Starting Live WebSocket & DOM Bridge...");
 
-  // CDP WebSocket Stream Interceptor
   page.target().createCDPSession().then(async (client) => {
     await client.send('Network.enable');
     client.on('Network.webSocketFrameReceived', async ({ response }) => {
@@ -238,7 +253,6 @@ function setupResponseMonitor() {
     });
   }).catch(e => {});
 
-  // Reliable DOM Table Fallback Scanner (Checks every 3 seconds)
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
@@ -300,6 +314,9 @@ async function startWorker() {
     workerStarted = true;
     console.log("[WORKER] 24/7 Monitoring Active!");
     startKeepAlive();
+
+    // Admin ko successful connection ki notification bhejna
+    await notifyAdminConnection();
   } catch (error) {
     workerStarted = false;
     console.error("[WORKER CRASHED]:", error.message);
