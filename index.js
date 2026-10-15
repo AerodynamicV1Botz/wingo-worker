@@ -221,7 +221,7 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// Final Deep DOM & Shadow DOM Scanner Loop
+// Final Deep DOM & Shadow DOM Scanner Loop (Updated for 18-digit period)
 function setupResponseMonitor() {
   console.log("[MONITOR] Starting Deep DOM & Shadow DOM Scanner...");
 
@@ -231,7 +231,8 @@ function setupResponseMonitor() {
 
       const scannedData = await page.evaluate(() => {
         const parseText = (text) => {
-          const pMatch = text.match(/202[5-9]\d{10,14}/);
+          // 18-digit period number match karne ke liye updated regex
+          const pMatch = text.match(/202[5-9]\d{12,16}/);
           if (!pMatch) return null;
           const period = pMatch[0];
           const digits = text.match(/\b[0-9]\b/g);
