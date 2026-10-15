@@ -20,8 +20,8 @@ app.listen(PORT, () => {
 
 async function fetchWinGo1MResult() {
   try {
-    // Standard frontend proxy path fallback
-    const API_URL = `https://www.dmfirst0.com/web/game/getHistory?gameCode=WinGo_1M`;
+    // Correct API Path with /api/ prefix
+    const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=WinGo_1M`;
 
     const response = await axios.get(API_URL, {
       headers: {
@@ -29,7 +29,7 @@ async function fetchWinGo1MResult() {
         'Accept': 'application/json, text/plain, */*',
         'Authorization': AUTH_TOKEN,
         'token': AUTH_TOKEN,
-        'Referer': 'https://www.dmfirst0.com/#/saasLottery/',
+        'Referer': 'https://www.dmfirst0.com/',
         'Origin': 'https://www.dmfirst0.com'
       },
       timeout: 8000
