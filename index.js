@@ -210,6 +210,7 @@ async function sendResultToBotBusiness(resultData) {
 }
 
 // Final Precise History Table Scraper
+// Robust Precise History Table Scraper
 function setupResponseMonitor() {
   console.log("[MONITOR] Starting Precise History Table Scanner...");
 
@@ -218,17 +219,21 @@ function setupResponseMonitor() {
       if (!page || page.isClosed()) return;
 
       const scannedData = await page.evaluate(() => {
-        // Game history table ke rows ya text blocks ko dhoondo jisme 18-digit period ho
-        const elements = Array.from(document.querySelectorAll("div, span, p, tr"));
+        // Page ka poora text ya saare visible items
+        const bodyText = document.body ? document.body.innerText : "";
         
-        for (let el of elements) {
-          const text = (el.innerText || "").trim();
-          // 18-digit period number match (jaise 20261015100010552)
-          const pMatch = text.match(/202[5-9]\d{12,16}/);
-          if (pMatch) {
-            const period = pMatch[0];
-            // Usi text ke andar se winning number nikalna (0 se 9 ke beech ka digit)
-            const digits = text.match(/\b[0-9]\b/g);
+        // 18-digit period number search karo (jaise 20261015...)
+        const pMatch = bodyText.match(/202[5-9]\d{12,16}/);
+        if (!pMatch) return { error: "Period not found in body text" };
+
+        const period = pMatch[0];
+
+        // Usi text block ya table cells se digits nikalna
+        const rows = Array.from(document.querySelectorAll('tr, [class*="row"], [class*="item"], [class*="list"]'));
+        for (let row of rows) {
+          const txt = (row.innerText || "").trim();
+          if (txt.includes(period)) {
+            const digits = txt.match(/\b[0-9]\b/g);
             if (digits && digits.length > 0) {
               const number = parseInt(digits[0]);
               if (!isNaN(number) && number >= 0 && number <= 9) {
@@ -237,7 +242,17 @@ function setupResponseMonitor() {
             }
           }
         }
-        return { error: "Latest history row not found yet" };
+
+        // Fallback: Agar row element na mile toh body text se hi pehla number utha lo
+        const allDigits = bodyText.match(/\b[0-9]\b/g);
+        if (allDigits && allDigits.length > 0) {
+          const number = parseInt(allDigits[0]);
+          if (!isNaN(number) && number >= 0 && number <= 9) {
+            return { period, number };
+          }
+        }
+
+        return { error: "Period found but number row missing" };
       });
 
       if (scannedData.period && scannedData.number !== undefined) {
