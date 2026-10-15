@@ -13,7 +13,6 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-// Secrets ko Render Environment Variables se fetch kar rahe hain
 const BOTBUSINESS_API = process.env.BOTBUSINESS_API;
 const SECRET_TOKEN = process.env.SECRET_TOKEN;
 const DEMO_USER = process.env.DEMO_USER;
@@ -23,7 +22,9 @@ let lastPeriod = "";
 
 async function startBot() {
     console.log("[STATUS] Launching Puppeteer Browser on Render...");
+    
     const browser = await puppeteer.launch({
+        executablePath: '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome', // Explicit path
         headless: "new",
         args: [
             '--no-sandbox',
@@ -87,7 +88,6 @@ async function startBot() {
 
     await page.waitForTimeout(5000);
 
-    // Dismiss popups if present
     try {
         await page.evaluate(() => {
             const btns = Array.from(document.querySelectorAll('button, div'));
@@ -121,7 +121,6 @@ async function startBot() {
 
     console.log("[SUCCESS] Worker active on WinGo 1 Min page!");
 
-    // Keep session active with light scrolling
     setInterval(async () => {
         try {
             await page.evaluate(() => window.scrollBy(0, 20));
