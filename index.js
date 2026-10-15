@@ -1,7 +1,7 @@
 /*
 =========================================================
  PROJECT : DmFirst WinGo 1M Worker
- PURPOSE : Step-by-step navigation, popup handler & history scraper
+ PURPOSE : Complete Final Code - Login, Navigation & Dual Scraper
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
@@ -212,28 +212,24 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// 4. Accurate Table Row Scanner Loop
+// 4. Dual Scraper (Network + HTML Inspector)
 function setupResponseMonitor() {
-function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Full Network & HTML Inspector...");
+  console.log("[MONITOR] Starting Dual Scraper & Inspector...");
 
-  // 1. Network API Interceptor (Sabse powerful tarika API data pakadne ka)
   page.on("response", async (response) => {
     try {
       const url = response.url();
       if (!response.ok()) return;
 
-      if (url.includes("GetNoList") || url.includes("getHistory") || url.includes("WinGo") || url.includes("history") || url.includes("game")) {
+      if (url.includes("GetNoList") || url.includes("getHistory") || url.includes("WinGo") || url.includes("history")) {
         let json;
         try { json = await response.json(); } catch (e) { return; }
 
-        console.log("[NETWORK API HIT DETECTED]:", url);
-        
         let list = (json && json.data) ? (json.data.list || json.data) : (json ? json.list : null);
         if (Array.isArray(list) && list.length > 0) {
           const item = list[0];
           const period = item.issueNumber || item.issue || item.period || item.periodNumber || item.gameNo;
-          const num = item.number ?? item.result ?? item.openNumber ?? item.winNumber;
+          const num = item.number ?? item.result ?? item.openNumber;
 
           if (period && num !== undefined) {
             const number = parseInt(num);
@@ -241,13 +237,8 @@ function setupResponseMonitor() {
             if (key !== lastResultKey) {
               lastResultKey = key;
               const resultType = number >= 5 ? "BIG" : "SMALL";
-              console.log("[NETWORK RESULT CAPTURED]:", period, number, resultType);
-
-              await sendResultToBotBusiness({
-                period: String(period),
-                number: number,
-                result: resultType
-              });
+              console.log("[NETWORK RESULT]:", period, number, resultType);
+              await sendResultToBotBusiness({ period: String(period), number, result: resultType });
             }
           }
         }
@@ -255,7 +246,6 @@ function setupResponseMonitor() {
     } catch (err) {}
   });
 
-  // 2. Fallback HTML InnerText Inspector
   setInterval(async () => {
     try {
       if (!page || page.isClosed()) return;
@@ -264,7 +254,6 @@ function setupResponseMonitor() {
         return document.documentElement ? document.documentElement.innerText : "";
       });
 
-      // Agar page par koi bhi 14 ya 15 digit ka number dikhe
       const periodMatch = pageText.match(/202[5-9]\d{10,14}/);
       if (periodMatch) {
         const period = periodMatch[0];
@@ -277,18 +266,11 @@ function setupResponseMonitor() {
             lastResultKey = key;
             const resultType = number >= 5 ? "BIG" : "SMALL";
             console.log("[HTML SCRAPED SUCCESS]:", period, number, resultType);
-
-            await sendResultToBotBusiness({
-              period: String(period),
-              number: number,
-              result: resultType
-            });
+            await sendResultToBotBusiness({ period: String(period), number, result: resultType });
           }
         }
       }
-    } catch (err) {
-      console.error("[INSPECTOR ERROR]:", err.message);
-    }
+    } catch (err) {}
   }, 4000);
 }
 
