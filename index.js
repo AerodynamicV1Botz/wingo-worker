@@ -1,7 +1,7 @@
 /*
 =========================================================
  PROJECT : DmFirst WinGo 1M Worker
- PURPOSE : Final Complete Code with Network API Interceptor
+ PURPOSE : Working Direct Browser Fetch & WebSocket Bridge
  PLATFORM: Render + Node.js + Puppeteer
 =========================================================
 */
@@ -170,13 +170,7 @@ async function navigateToWinGo1M() {
   });
   await sleep(3000);
 
-  console.log("[NAVIGATION] Scrolling down to Game History Table...");
-  await page.evaluate(() => {
-    window.scrollBy(0, 500);
-  });
-  await sleep(2000);
-
-  console.log("[NAVIGATION] Navigation complete! Active on Game History Table.");
+  console.log("[NAVIGATION] Navigation complete! Active on WinGo Game Page.");
 }
 
 async function sendResultToBotBusiness(resultData) {
@@ -209,55 +203,79 @@ async function sendResultToBotBusiness(resultData) {
   }
 }
 
-// Enhanced Network API Interceptor with Periodic Trigger
+// Working Browser-Side WebSocket / Event Listener & DOM Fallback Bridge
 function setupResponseMonitor() {
-  console.log("[MONITOR] Starting Active Network API Interceptor...");
+  console.log("[MONITOR] Starting Browser-Side Live Bridge...");
 
-  page.on("response", async (response) => {
-    try {
-      const url = response.url();
-      if (!response.ok()) return;
+  // CDP (Chrome DevTools Protocol) session enable karke incoming websocket messages sunenge
+  page.target().createCDPSession().then(async (client) => {
+    await client.send('Network.enable');
+    client.on('Network.webSocketFrameReceived', async ({ response }) => {
+      try {
+        const payloadData = response.payloadData;
+        if (payloadData && (payloadData.includes("issue") || payloadData.includes("period") || payloadData.includes("number"))) {
+          console.log("[WEBSOCKET RAW DATA]:", payloadData.substring(0, 200));
+          
+          // JSON parse karne ki koshish
+          let parsed;
+          try { parsed = JSON.parse(payloadData); } catch (e) {}
 
-      if (url.includes("history") || url.includes("list") || url.includes("GetNoList") || url.includes("open") || url.includes("game")) {
-        let json;
-        try {
-          json = await response.json();
-        } catch (e) {
-          return;
-        }
+          if (parsed) {
+            // Data se period aur number nikalna
+            let period = parsed.issueNumber || parsed.issue || parsed.period || parsed.periodNumber;
+            let num = parsed.number ?? parsed.result ?? parsed.openNumber;
 
-        let list = null;
-        if (json && json.data) {
-          list = json.data.list || json.data.data || json.data;
-        } else if (json && json.list) {
-          list = json.list;
-        }
-
-        if (Array.isArray(list) && list.length > 0) {
-          const item = list[0];
-          const period = item.issueNumber || item.issue || item.period || item.periodNumber || item.gameNo;
-          const num = item.number ?? item.result ?? item.openNumber ?? item.winNumber;
-
-          if (period && num !== undefined) {
-            const number = parseInt(num);
-            const key = String(period) + ":" + number;
-
-            if (key !== lastResultKey) {
-              lastResultKey = key;
-              const resultType = number >= 5 ? "BIG" : "SMALL";
-              console.log("[API CAPTURED SUCCESS]: Period:", period, "| Number:", number, "| Result:", resultType);
-
-              await sendResultToBotBusiness({
-                period: String(period),
-                number: number,
-                result: resultType
-              });
+            if (period && num !== undefined) {
+              const number = parseInt(num);
+              const key = String(period) + ":" + number;
+              if (key !== lastResultKey) {
+                lastResultKey = key;
+                const resultType = number >= 5 ? "BIG" : "SMALL";
+                console.log("[WEBSOCKET SUCCESS]:", period, number, resultType);
+                await sendResultToBotBusiness({ period: String(period), number, result: resultType });
+              }
             }
           }
         }
+      } catch (err) {}
+    });
+  }).catch(e => console.log("[CDP ERROR]:", e.message));
+
+  // Fallback: Direct DOM Table Row Inspector
+  setInterval(async () => {
+    try {
+      if (!page || page.isClosed()) return;
+
+      const rowData = await page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('tr, .van-row, div'));
+        for (let r of rows) {
+          const txt = (r.innerText || "").trim();
+          const match = txt.match(/202[5-9]\d{12,16}/);
+          if (match) {
+            const period = match[0];
+            const digits = txt.match(/\b[0-9]\b/g);
+            if (digits && digits.length > 0) {
+              const number = parseInt(digits[0]);
+              if (!isNaN(number) && number >= 0 && number <= 9) {
+                return { period, number };
+              }
+            }
+          }
+        }
+        return null;
+      });
+
+      if (rowData && rowData.period && rowData.number !== undefined) {
+        const key = rowData.period + ":" + rowData.number;
+        if (key !== lastResultKey) {
+          lastResultKey = key;
+          const resultType = rowData.number >= 5 ? "BIG" : "SMALL";
+          console.log("[DOM TABLE SUCCESS]:", rowData.period, rowData.number, resultType);
+          await sendResultToBotBusiness({ period: String(rowData.period), number: rowData.number, result: resultType });
+        }
       }
     } catch (err) {}
-  });
+  }, 4000);
 }
 
 function startKeepAlive() {
@@ -265,14 +283,10 @@ function startKeepAlive() {
   keepAliveTimer = setInterval(async () => {
     try {
       if (page && !page.isClosed()) {
-        // Har 10 second mein thoda scroll karke history table ko active karenge taaki API call ho
-        await page.evaluate(() => {
-          window.scrollBy(0, 10);
-          setTimeout(() => window.scrollBy(0, -10), 500);
-        });
+        await page.evaluate(() => window.scrollBy(0, 1));
       }
     } catch (e) {}
-  }, 10000);
+  }, 15000);
 }
 
 async function startWorker() {
