@@ -20,17 +20,17 @@ app.listen(PORT, () => {
 
 async function fetchWinGoResult() {
   try {
-    // Direct main domain API endpoint with WinGo 1M parameters
-    const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=WinGo_1M&lottery=WinGo`;
+    // Combined official API endpoint matching frontend configuration and parameters
+    const API_URL = `https://api.dmfirst9api.com/api/web/game/getHistory?gameCode=WinGo_1M&lottery=WinGo&tenant=ar103`;
 
     const response = await axios.get(API_URL, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
-        'Authorization': AUTH_TOKEN,
+        'Authorization': AUTH_TOKEN.startsWith('Bearer') ? AUTH_TOKEN : `Bearer ${AUTH_TOKEN}`,
         'token': AUTH_TOKEN,
         'tenant': 'ar103',
-        'Referer': 'https://www.dmfirst0.com/#/saasLottery/WinGo?gameCode=WinGo_1M&lottery=WinGo',
+        'Referer': 'https://www.dmfirst0.com/',
         'Origin': 'https://www.dmfirst0.com'
       },
       timeout: 8000
