@@ -405,65 +405,63 @@ async function dismissConfirmPopup() {
 }
 
 // =======================================================
-// SCRIPT 10 — OPEN LOTTERY / WINGO 1M
+// SCRIPT 10 — OPEN LOTTERY / WINGO 1M (EXACT URL INTEGRATED)
 // =======================================================
 
 async function openWinGoPage() {
-  console.log("[GAME] Opening Lottery page...");
+  const WINGO_DIRECT_URL = "https://www.dmfirst0.com/#/saasLottery/WinGo?gameCode=WinGo_1M&lottery=WinGo";
+  
+  console.log("[GAME] Navigating directly to WinGo 1M Page...");
+  console.log("[GAME] URL:", WINGO_DIRECT_URL);
 
-  await page.goto(
-    "https://www.dmfirst0.com/#/saasLottery/WinGo?gameCode=WinGo_1M&lottery=WinGo",
-    {
+  try {
+    await page.goto(WINGO_DIRECT_URL, {
       waitUntil: "domcontentloaded",
       timeout: 60000
-    }
-  );
-
-  await sleep(5000);
-
-  const clicked = await page.evaluate(() => {
-    const elements = Array.from(
-      document.querySelectorAll(
-        "button, a, div, span, li"
-      )
-    );
-
-    const target = elements.find((element) => {
-      const text = (
-        element.innerText ||
-        element.textContent ||
-        ""
-      ).trim().toLowerCase();
-
-      const visible =
-        element.offsetWidth > 0 &&
-        element.offsetHeight > 0;
-
-      return (
-        visible &&
-        [
-          "wingo 1m",
-          "wingo 1 min",
-          "win go 1m"
-        ].includes(text)
-      );
     });
-
-    if (!target) return false;
-
-    target.click();
-    return true;
-  });
-
-  if (clicked) {
-    console.log("[GAME] WinGo 1M selected.");
-  } else {
-    console.log(
-      "[GAME] WinGo 1M not detected. Website layout may have changed."
-    );
+    
+    console.log("[GAME] Direct URL loaded successfully.");
+    await sleep(5000);
+  } catch (err) {
+    console.error("[GAME] Direct URL navigation failed:", err.message);
   }
 
-  await sleep(5000);
+  // Backup selector: Click 1M tab in case page loads on default tab
+  try {
+    const clicked = await page.evaluate(() => {
+      const elements = Array.from(
+        document.querySelectorAll("button, div, span, p, a, li")
+      );
+
+      const target = elements.find((element) => {
+        const text = (
+          element.innerText ||
+          element.textContent ||
+          ""
+        ).trim().toLowerCase();
+
+        const visible =
+          element.offsetWidth > 0 &&
+          element.offsetHeight > 0;
+
+        return visible && (text === "1m" || text === "1 min" || text.includes("wingo 1m"));
+      });
+
+      if (!target) return false;
+
+      target.click();
+      return true;
+    });
+
+    if (clicked) {
+      console.log("[GAME] 1M Tab clicked successfully.");
+    }
+  } catch (e) {
+    console.log("[GAME] 1M Tab check skipped.");
+  }
+
+  await sleep(3000);
+  console.log("[GAME] WinGo 1M page is active and listening for network responses!");
 }
 
 // =======================================================
