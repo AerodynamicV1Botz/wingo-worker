@@ -7,31 +7,30 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const SECRET_TOKEN = process.env.SECRET_TOKEN || "AapkaSecretToken123";
 let AUTH_TOKEN = process.env.AUTH_TOKEN || "";
 
-// Clean spaces/newlines from environment variable
+// Extra spaces aur newlines clean karna
 AUTH_TOKEN = AUTH_TOKEN.replace(/\s+/g, '').trim();
 
-const games = [
-  { code: "WinGo_1M", name: "WinGo 1 Min", lastPeriod: "" },
-  { code: "WinGo_3M", name: "WinGo 3 Min", lastPeriod: "" }
-];
+let lastPeriod = "";
 
 app.get('/', (req, res) => {
-  res.send('DmFirst WinGo 1M & 3M Worker Active!');
+  res.send('DmFirst WinGo 1 Min Auto Result Worker is Active 24/7!');
 });
 
 app.listen(PORT, () => {
-  console.log(`Server on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
 
-async function fetchGameResult(game) {
+async function fetchWinGo1MResult() {
   try {
-    const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=${game.code}`;
-    
+    // WinGo 1 Min direct API endpoint
+    const API_URL = `https://www.dmfirst0.com/api/web/game/getHistory?gameCode=WinGo_30S`; 
+
     const response = await axios.get(API_URL, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
-        'Authorization': AUTH_TOKEN,
+        'Referer': 'https://www.dmfirst0.com/',
+        'Authorization': AUTH_TOKEN.startsWith('Bearer') ? AUTH_TOKEN : `Bearer ${AUTH_TOKEN}`,
         'token': AUTH_TOKEN
       }
     });
@@ -41,8 +40,10 @@ async function fetchGameResult(game) {
       const period = latestGame.period || latestGame.issueNumber;
       const numberResult = parseInt(latestGame.number || latestGame.result);
 
-      if (period && period !== game.lastPeriod) {
-        game.lastPeriod = period;
+      if (period && period !== lastPeriod) {
+        lastPeriod = period;
+
+        // Result logic: 5-9 = WIN (Big), 0-4 = LOSS (Small)
         const resultType = (numberResult >= 5) ? "WIN" : "LOSS";
 
         if (BOT_TOKEN) {
@@ -52,20 +53,19 @@ async function fetchGameResult(game) {
               token: SECRET_TOKEN,
               period: String(period),
               result: resultType,
-              platform: game.name
+              platform: "WinGo 1 Min"
             }
           });
-          console.log(`[SUCCESS] [${game.name}] Period: ${period} | Result: ${resultType}`);
+          console.log(`[SUCCESS] [WinGo 1 Min] Period: ${period} | Result: ${resultType}`);
         }
       }
     } else {
-      console.log(`[WARNING] [${game.name}] Response format error or expired token.`);
+      console.log(`[WARNING] API Response:`, JSON.stringify(response.data));
     }
   } catch (error) {
-    console.error(`[ERROR] [${game.name}] Request failed:`, error.message);
+    console.error(`[ERROR] Fetch Failed:`, error.message);
   }
 }
 
-setInterval(() => {
-  games.forEach(game => fetchGameResult(game));
-}, 10000);
+// Har 8-10 second me WinGo 1 Min update
+setInterval(fetchWinGo1MResult, 8000);
